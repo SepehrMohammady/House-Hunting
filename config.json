@@ -163,6 +163,18 @@
     "timeoutMs": 30000,
     "retries": 2
   },
+  "schedule": {
+    "_comment": "Single source of truth for run times. Change here, then re-run scripts/vps-setup.sh on the server to apply it to the systemd timer. The archive page reads it too, so the page never advertises a schedule it is not actually keeping.",
+    "times": [
+      "08:00",
+      "11:00",
+      "14:00",
+      "18:00",
+      "22:00"
+    ],
+    "timezone": "Europe/Rome",
+    "_note": "24-hour, server local time. The setup script pins the server to this timezone so the schedule does not drift from Genoa."
+  },
   "publish": {
     "_comment": "Publishes reports to a password-protected page on your own site. Nothing identifying lives here - the domain, server and credentials all come from .env, which is git-ignored.",
     "enabled": true,
@@ -174,6 +186,7 @@
     "upload": {
       "enabled": true,
       "_note": "Set true once VPS_HOST / VPS_USER / VPS_PATH are filled in .env. Uses scp over an SSH key - no password is ever stored."
-    }
+    },
+    "_note3": "On the server PUBLISH_DIR in .env points straight at the directory nginx serves, and upload is skipped automatically - you do not upload to yourself."
   }
 }

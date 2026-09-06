@@ -1,15 +1,19 @@
 <#
 .SYNOPSIS
-  Registers the house finder to run at 06:00, 12:00 and 18:00 every day.
+  Registers the house finder on this PC, at the times in config.json.
+
+.NOTE
+  The scanner normally runs on the web server instead - see scripts/vps-setup.sh.
+  This script remains for running it locally, e.g. to test a change.
 
 .DESCRIPTION
-  Creates a single Windows Scheduled Task with three daily triggers.
+  Creates a single Windows Scheduled Task, one trigger per time in config.json.
 
   Notes on the choices here:
     * Runs as the current user, interactively. Idealista needs a visible browser
       window to clear its bot challenge, which an SYSTEM-level task cannot show.
     * StartWhenAvailable catches up a run the machine slept through - without it
-      a laptop that was closed at 06:00 simply loses that report.
+      a laptop that was closed at the scheduled time simply loses that report.
     * No -RunLevel Highest: nothing here needs administrator rights.
 
 .EXAMPLE
@@ -42,7 +46,7 @@ if (-not (Test-Path $RunScript)) {
     throw "Cannot find $RunScript - run this from the project's scripts folder."
 }
 
-# Verify node is actually reachable, because a scheduled task failing at 06:00
+# Verify node is actually reachable, because a scheduled task failing overnight
 # with a silent "file not found" is painful to diagnose after the fact.
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
@@ -52,11 +56,16 @@ Write-Host "Using node at $($node.Source)" -ForegroundColor DarkGray
 
 $action = New-ScheduledTaskAction -Execute $RunScript -WorkingDirectory $ProjectDir
 
-$triggers = @(
-    New-ScheduledTaskTrigger -Daily -At 6am
-    New-ScheduledTaskTrigger -Daily -At 12pm
-    New-ScheduledTaskTrigger -Daily -At 6pm
-)
+# config.json is the single source of truth for run times, shared with the
+# server's systemd timer, so the two can never drift apart.
+$configPath = Join-Path $ProjectDir "config.json"
+$times = (Get-Content $configPath -Raw | ConvertFrom-Json).schedule.times
+if (-not $times) { throw "config.json has no schedule.times" }
+
+$triggers = foreach ($t in $times) {
+    New-ScheduledTaskTrigger -Daily -At ([datetime]::ParseExact($t, "HH:mm", $null))
+}
+Write-Host "Times from config.json: $($times -join ', ')" -ForegroundColor DarkGray
 
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
@@ -84,7 +93,7 @@ Register-ScheduledTask `
     -Description "Scans Italian rental portals for 2-bedroom furnished flats in Genoa and writes an HTML report." | Out-Null
 
 Write-Host ""
-Write-Host "Scheduled '$TaskName' at 06:00, 12:00 and 18:00 daily." -ForegroundColor Green
+Write-Host "Scheduled '$TaskName' at $($times -join ', ') daily." -ForegroundColor Green
 Write-Host "  Project : $ProjectDir"
 Write-Host "  Reports : $ProjectDir\reports\latest.html"
 Write-Host "  Logs    : $ProjectDir\data\run.log"

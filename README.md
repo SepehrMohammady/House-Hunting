@@ -1,6 +1,6 @@
 # Genoa House Finder
 
-Scans four Italian rental portals three times a day for **2-bedroom furnished
+Scans four Italian rental portals five times a day for **2-bedroom furnished
 flats in your 12 target areas of Genoa, under €1000/month all-in**, and writes a
 single tidy HTML report with photos, full details and contact numbers.
 
@@ -126,30 +126,46 @@ seeing a flat in person.**
 
 ## Scheduling
 
-### Windows (now)
+Run times live in `schedule.times` in [`config.json`](config.json) — currently
+**08:00, 11:00, 14:00, 18:00 and 22:00** Rome time. That is the single source of
+truth: the systemd timer, the Windows task and the text on the archive page all
+read it, so the page can never advertise a schedule the timer is not keeping.
+
+### On the web server — the normal setup
+
+```bash
+sudo ./scripts/vps-setup.sh
+```
+
+Installs a systemd timer on those times, pins the server clock to `Europe/Rome`
+so they don't drift from Genoa, and sets `PUBLISH_DIR` so reports are written
+**straight into the directory nginx serves**. No upload step: the machine would
+only be copying to itself.
+
+```bash
+sudo systemctl start house-finder.service      # run now
+systemctl list-timers house-finder.timer       # next runs
+tail -f data/run.log                           # watch it
+```
+
+Re-run the script after changing `schedule.times` to apply the new timer.
+
+Idealista and the Immobiliare full-text lookup both need Chromium; the script
+offers to install it. On a server there is no display, so the browser falls back
+to headless automatically — expect DataDome to challenge more often from a
+datacentre IP than from a home connection. Run the service under `xvfb-run` if
+you want the harder-to-detect visible mode; the code picks that up on its own.
+
+### On a PC instead — optional
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-schedule.ps1
-```
-
-Registers one task with triggers at **06:00, 12:00 and 18:00**. It catches up a
-run the machine slept through, and logs to `data\run.log`.
-
-```powershell
-Start-ScheduledTask -TaskName "Genoa House Finder"          # test it now
 powershell -File scripts\install-schedule.ps1 -Remove       # uninstall
 ```
 
-### Linux VPS (later)
-
-```bash
-chmod +x scripts/vps-setup.sh && ./scripts/vps-setup.sh
-```
-
-Installs a systemd timer on the same schedule and pins the timezone to
-`Europe/Rome` so it doesn't drift from Genoa time. On a headless VPS either
-disable Idealista or let the script install Chromium's libraries — expect
-DataDome to challenge more often from a datacentre IP than from home.
+Reads the same `schedule.times`, and uploads over SSH rather than publishing in
+place. Worth it only for testing a change: a PC that is asleep at 08:00 misses
+that run.
 
 ## Getting the reports
 

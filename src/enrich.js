@@ -17,8 +17,7 @@
  * the listing keeps whatever the list view gave us and the run continues.
  */
 
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { PROFILE_DIR, launchOptions } from './browser.js';
 import { detectContractType, detectResidenza, textDepth } from './contract.js';
 import {
   detectFurnished,
@@ -29,9 +28,6 @@ import {
   estimateTotalCost,
   textBlob,
 } from './normalize.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROFILE_DIR = path.resolve(__dirname, '..', 'data', '.browser-profile');
 
 /** Pull the ad body from a rendered Immobiliare detail page. */
 async function readDescription(page) {
@@ -79,16 +75,10 @@ export async function enrichFullText(listings, config, log) {
 
   let ctx;
   try {
-    ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
-      headless: config.sources.immobiliare.headless !== false,
-      viewport: { width: 1440, height: 900 },
-      locale: 'it-IT',
-      timezoneId: 'Europe/Rome',
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
-    });
+    ctx = await chromium.launchPersistentContext(
+      PROFILE_DIR,
+      launchOptions(config.sources.immobiliare.headless)
+    );
   } catch (err) {
     log.warn(`enrich: could not start browser - ${err.message}`);
     return { enriched: 0, failed: batch.length, changed: [] };

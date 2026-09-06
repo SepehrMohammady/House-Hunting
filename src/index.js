@@ -35,7 +35,7 @@ import { applyFilters, rejectReason, scoreListing } from './filter.js';
 import { loadStore, saveStore, markChanges } from './store.js';
 import { buildReport, writeReport } from './report.js';
 import { sendReport, loadEnv } from './mailer.js';
-import { publishReport } from './publish.js';
+import { publishReport, publishesInPlace } from './publish.js';
 import { uploadArchive } from './upload.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -222,7 +222,10 @@ async function main() {
 
   // ---- 8. Publish to the archive ----------------------------------------
   const publishResult = publishReport({ reportPath, config, stats, runAt, log });
-  if (publishResult.published && !hasFlag('--no-upload')) {
+
+  // On the web server the report was just written into the served directory, so
+  // there is nothing to transfer - uploading would mean scp-ing to ourselves.
+  if (publishResult.published && !hasFlag('--no-upload') && !publishesInPlace()) {
     await uploadArchive({ publishResult, config, log });
   }
 

@@ -27,12 +27,75 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { esc } from './report.js';
 import { C, D, styleBlock, themeToggle } from './theme.js';
+import { loadEnv } from './mailer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const MANIFEST = path.resolve(ROOT, 'data', 'reports-index.json');
 
+/**
+ * Where the archive is assembled, and whether anything needs sending anywhere.
+ *
+ * On the server the scanner writes directly into the directory nginx serves, so
+ * the upload step is not merely unnecessary - running it would have the machine
+ * scp files to itself. Setting PUBLISH_DIR is therefore the single switch that
+ * says "this machine IS the web server", and it disables upload on its own
+ * rather than relying on someone also remembering to flip a flag in config.
+ */
+function readEnvPublishDir() {
+  return loadEnv().PUBLISH_DIR || null;
+}
+
+export function publishesInPlace() {
+  return !!readEnvPublishDir();
+}
+
 /* ------------------------------- manifest ------------------------------- */
+
+/**
+ * Adopt report files that exist on disk but are missing from the manifest.
+ *
+ * The manifest lives in the project's data directory while the reports live in
+ * the published one, so the two can part company: moving the scanner from a PC
+ * to the server carries the uploaded reports across but not the manifest, and
+ * wiping data/ loses it outright. Without this the files would sit there
+ * unreachable, present but unlinked from the only page that indexes them.
+ *
+ * The run time is recoverable from the filename. The counts are not, so they are
+ * left null and the index shows a dash rather than inventing a number.
+ */
+function adoptOrphans(reportsDir, reports) {
+  let files;
+  try {
+    files = fs.readdirSync(reportsDir).filter((f) => /^report-.*\.html$/.test(f));
+  } catch {
+    return reports;
+  }
+
+  const known = new Set(reports.map((r) => r.file));
+  const adopted = [];
+
+  for (const file of files) {
+    if (known.has(file)) continue;
+    // report-2026-09-06T11-29.html -> 2026-09-06T11:29
+    const m = file.match(/^report-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})\.html$/);
+    if (!m) continue;
+    const runAt = new Date(`${m[1]}T${m[2]}:${m[3]}:00`);
+    if (Number.isNaN(runAt.getTime())) continue;
+
+    adopted.push({
+      file,
+      runAt: runAt.toISOString(),
+      matchedCount: null,
+      newCount: null,
+      dropCount: null,
+      scanned: null,
+      adopted: true,
+    });
+  }
+
+  return adopted.length ? [...reports, ...adopted] : reports;
+}
 
 function loadManifest() {
   try {
@@ -67,6 +130,23 @@ function fmtTime(iso) {
     minute: '2-digit',
     timeZone: ROME,
   });
+}
+
+/**
+ * "08:00, 11:00, 14:00, 18:00 and 22:00 Rome time".
+ *
+ * Read from config rather than written into the template, so the page cannot
+ * end up advertising a schedule the timer is no longer keeping.
+ */
+function scheduleLabel(config) {
+  const times = config.schedule?.times;
+  if (!Array.isArray(times) || !times.length) return 'several times a day';
+  const tz = (config.schedule.timezone || '').split('/').pop() || '';
+  const list =
+    times.length === 1
+      ? times[0]
+      : `${times.slice(0, -1).join(', ')} and ${times[times.length - 1]}`;
+  return `${list}${tz ? ` ${tz} time` : ''}`;
 }
 
 /** Group reports by calendar day so the archive reads as a diary, not a list. */
@@ -121,8 +201,11 @@ function buildIndex(reports, config) {
             ? `<span class="t-cool" style="margin-left:8px;font-size:10px;color:${C.cool};font-weight:700;">LATEST</span>`
             : '') +
           `</td>` +
-          `<td class="t-ink" style="padding:11px 8px;font-size:14px;font-weight:600;color:${C.ink};">${r.matchedCount}` +
-          `<span class="t-muted" style="color:${C.muted};font-weight:400;font-size:12px;"> matches</span></td>` +
+          `<td class="t-ink" style="padding:11px 8px;font-size:14px;font-weight:600;color:${C.ink};">` +
+          (r.matchedCount == null
+            ? `<span class="t-muted" style="font-weight:400;font-size:12px;">&mdash;</span>`
+            : `${r.matchedCount}<span class="t-muted" style="color:${C.muted};font-weight:400;font-size:12px;"> matches</span>`) +
+          `</td>` +
           `<td style="padding:11px 8px;">${newBadge}</td>` +
           `<td style="padding:11px 8px;">${cuts}</td>` +
           `<td class="i-open" style="padding:11px 14px;text-align:right;">` +
@@ -157,7 +240,7 @@ ${styleBlock('index')}
       <td style="vertical-align:top;">
         <div class="t-ink" style="font-size:22px;font-weight:700;color:${C.ink};">${esc(config.report.title)}</div>
         <div class="t-muted" style="font-size:12px;color:${C.muted};margin-top:4px;">
-          Updated at 06:00, 12:00 and 18:00 Rome time &middot; ${esc(reports.length)} report${reports.length === 1 ? '' : 's'} kept
+          Updated at ${esc(scheduleLabel(config))} &middot; ${esc(reports.length)} report${reports.length === 1 ? '' : 's'} kept
         </div>
       </td>
       <td style="vertical-align:top;text-align:right;white-space:nowrap;">${themeToggle()}</td>
@@ -165,10 +248,10 @@ ${styleBlock('index')}
     ${
       latest
         ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:18px;"><tr>` +
-          statCell(latest.matchedCount, 'in your areas') +
-          statCell(latest.newCount, 'new last run', latest.newCount ? C.good : C.ink, latest.newCount ? 't-good' : 't-ink') +
-          statCell(latest.dropCount, 'price cuts', latest.dropCount ? C.warn : C.ink, latest.dropCount ? 't-warn' : 't-ink') +
-          statCell(latest.scanned, 'ads scanned') +
+          statCell(latest.matchedCount ?? '—', 'in your areas') +
+          statCell(latest.newCount ?? '—', 'new last run', latest.newCount ? C.good : C.ink, latest.newCount ? 't-good' : 't-ink') +
+          statCell(latest.dropCount ?? '—', 'price cuts', latest.dropCount ? C.warn : C.ink, latest.dropCount ? 't-warn' : 't-ink') +
+          statCell(latest.scanned ?? '—', 'ads scanned') +
           `</tr></table>` +
           `<div style="margin-top:18px;">` +
           `<a class="btn" href="reports/${esc(latest.file)}" style="display:inline-block;padding:10px 18px;background:${C.cool};` +
@@ -308,7 +391,12 @@ export function publishReport({ reportPath, config, stats, runAt, log }) {
   const cfg = config.publish;
   if (!cfg?.enabled) return { published: false, reason: 'disabled' };
 
-  const publishDir = path.resolve(ROOT, cfg.localDir);
+  // PUBLISH_DIR lets the server write straight into the directory nginx serves.
+  // It lives in .env rather than config.json because it is a machine-specific
+  // absolute path, and this repository is public. When it is set there is
+  // nothing to transfer - see `publishesInPlace` below.
+  const target = readEnvPublishDir() || cfg.localDir;
+  const publishDir = path.resolve(ROOT, target);
   const reportsDir = path.join(publishDir, 'reports');
   fs.mkdirSync(reportsDir, { recursive: true });
 
@@ -316,7 +404,9 @@ export function publishReport({ reportPath, config, stats, runAt, log }) {
   fs.copyFileSync(reportPath, path.join(reportsDir, file));
 
   // Record this run, newest first.
-  let reports = loadManifest().filter((r) => r.file !== file);
+  // Pick up any reports present on disk but absent from the manifest, so a
+  // manifest that has gone missing does not orphan the files it indexed.
+  let reports = adoptOrphans(reportsDir, loadManifest()).filter((r) => r.file !== file);
   reports.unshift({
     file,
     runAt: runAt.toISOString(),
@@ -348,8 +438,10 @@ export function publishReport({ reportPath, config, stats, runAt, log }) {
   const loginPath = path.join(publishDir, 'login.html');
   fs.writeFileSync(loginPath, buildLoginPage(config), 'utf8');
 
+  // Report the directory actually written to, not the config default - on the
+  // server those differ, and a log line naming the wrong place is worse than none.
   log.step(
-    `publish: ${keep.length} reports in ${cfg.localDir}/` +
+    `publish: ${keep.length} report${keep.length === 1 ? '' : 's'} in ${target}` +
       (dropped.length ? ` (pruned ${dropped.length})` : '')
   );
 

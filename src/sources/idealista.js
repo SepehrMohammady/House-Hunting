@@ -15,11 +15,7 @@
  * returns an empty list - the other three portals still produce a report.
  */
 
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROFILE_DIR = path.resolve(__dirname, '..', '..', 'data', '.browser-profile');
+import { PROFILE_DIR, launchOptions, resolveHeadless } from '../browser.js';
 
 const LIST_URL = 'https://www.idealista.it/affitto-case/genova-genova/';
 
@@ -80,20 +76,7 @@ export async function fetchIdealista(config, log) {
 
   let context;
   try {
-    context = await chromium.launchPersistentContext(PROFILE_DIR, {
-      headless: cfg.headless === true,
-      viewport: { width: 1440, height: 900 },
-      locale: 'it-IT',
-      timezoneId: 'Europe/Rome',
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      args: [
-        // Removes the main automation giveaway that DataDome checks for.
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-      ],
-    });
+    context = await chromium.launchPersistentContext(PROFILE_DIR, launchOptions(cfg.headless));
   } catch (err) {
     log.warn(`idealista: could not launch browser - ${err.message}. Skipping.`);
     return { listings, blocked: true, skipped: true };
@@ -134,12 +117,12 @@ export async function fetchIdealista(config, log) {
         if (/datadome|captcha|geo\.captcha/i.test(body) || /accesso|robot/i.test(title)) {
           log.warn(
             `idealista: DataDome challenge on page ${p}. ` +
-              (cfg.headless
+              (resolveHeadless(cfg.headless)
                 ? 'Try headless:false in config.json.'
                 : 'Solve the CAPTCHA in the open window - the profile is saved for next time.')
           );
           // Give a human a chance to solve it while the window is visible.
-          if (!cfg.headless) {
+          if (!resolveHeadless(cfg.headless)) {
             const solved = await page
               .waitForSelector('article.item', { timeout: 90000 })
               .then(() => true)
