@@ -52,37 +52,53 @@ both are a shared secret sent over TLS on every request.
 
 ### Cookie gate
 
-`login.html` is generated with each run. It collects a password and stores it in
-a cookie scoped to that directory; it performs no validation and contains no
-secret, so it is safe to publish. nginx compares the cookie and returns a
-redirect instead of content when it does not match — an unauthenticated visitor
-never receives a byte of the archive.
+`login.html` is generated with each run. It collects a password, hashes it, and
+stores the digest in a cookie scoped to that directory; it performs no validation
+and contains no secret, so it is safe to publish. nginx compares the cookie and
+returns a redirect instead of content when it does not match — an unauthenticated
+visitor never receives a byte of the archive.
+
+The cookie carries `SHA-256(password)` as hex, not the password. A cookie value
+cannot legally hold whitespace or `, ; " \` (RFC 6265), so sending the password
+raw either corrupts it or restricts which passwords may be used; hex has neither
+problem, and is equally safe to paste into an nginx config or a shell command. It
+also means the server never stores the plaintext.
+
+Get the digest with:
+
+```bash
+printf %s 'your-password' | sha256sum
+```
 
 At `http` level, outside any `server` block:
 
 ```nginx
 map $cookie_hh $hh_ok {
-    default          0;
-    "your-password"  1;
+    default   0;
+    "<the 64-character digest>"  1;
 }
 ```
 
 Inside the HTTPS `server` block:
 
 ```nginx
+location = /your-path { return 301 /your-path/; }
+
 # The unlock page must stay reachable without the cookie, or there is no way in.
-location = /your-path/login.html {
-    alias /var/www/your-directory/login.html;
+location = /your-path/login {
+    root /var/www;
+    try_files /your-directory/login.html =404;
     add_header Cache-Control "no-store" always;
 }
 
-location /your-path/ {
+location ^~ /your-path/ {
     if ($hh_ok = 0) {
-        return 302 /your-path/login.html;
+        return 302 /your-path/login;
     }
 
-    alias /var/www/your-directory/;
+    root /var/www;
     index index.html;
+    try_files $uri $uri.html $uri/ =404;
     autoindex off;
 
     # Regenerated three times a day; do not let a proxy or the browser serve a
@@ -92,13 +108,21 @@ location /your-path/ {
 }
 ```
 
-Two things to get right:
+Four things to get right:
 
-- Keep the trailing slashes on both `location` and `alias` — mismatching them is
-  the usual cause of 404s with `alias`.
-- The cookie holds the password **verbatim**, not percent-encoded, so the string
-  in the `map` is exactly what you type. A password must therefore avoid
-  whitespace and `, ; " \`, which RFC 6265 forbids in a cookie value.
+- Use `^~`, not a bare prefix. A plain `location /your-path/` is outranked by any
+  regex location in the same server block — a common one is
+  `location ~* \.(css|js)$` — so assets under the gated path would be served from
+  the main site root, **without the cookie check**.
+- Name the location for the URL prefix and use `root`, not `alias`. Where the URL
+  prefix matches the directory name, `root` does the same job without `alias`'s
+  trailing-slash and `try_files` pitfalls.
+- Match the unlock page **extensionless** if the site rewrites `/foo.html` → `/foo`.
+  Such a rewrite runs before location matching, so `location = /your-path/login.html`
+  is never reached: the request falls into the gated location, gets redirected to
+  `login.html`, is rewritten back, and loops until the browser gives up.
+- Keep `try_files $uri $uri.html` for the same reason — without it, report links
+  ending in `.html` are rewritten to extensionless URLs that match no file.
 
 ### HTTPS is not optional here
 
@@ -143,29 +167,38 @@ roughly 180 reports of about 200 KB each — well under 40 MB.
 
 ## Checking it works
 
+`$D` below is the 64-character digest from `printf %s 'your-password' | sha256sum`.
+
 ```bash
 # 1. No cookie -> redirected to the unlock page, no content served
 curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}\n' https://your-host/your-path/
-# expect 302 -> .../login.html
+# expect 302 -> .../login
 
 # 2. Correct cookie -> content served
-curl -sS -o /dev/null -w '%{http_code}\n' \
-  --cookie 'hh=your-password' https://your-host/your-path/
+curl -sS -o /dev/null -w '%{http_code}\n' --cookie "hh=$D" https://your-host/your-path/
 # expect 200
 
-# 3. THE IMPORTANT ONE: reports must be gated too, not just the index
-curl -sS -o /dev/null -w '%{http_code}\n' https://your-host/your-path/reports/report-x.html
-# expect 302
+# 3. THE IMPORTANT ONE: reports must be gated too, not just the index.
+#    Follow redirects and check where you land, rather than asserting one status
+#    code - a site that rewrites /foo.html -> /foo answers 301 here first.
+curl -sSL -o /dev/null -w '%{url_effective}\n' \
+  https://your-host/your-path/reports/report-x.html
+# expect the login page; anything still under /reports/ means the gate is bypassed
 
 # 4. Wrong password is refused
-curl -sS -o /dev/null -w '%{http_code}\n' \
-  --cookie 'hh=wrong' https://your-host/your-path/
+curl -sS -o /dev/null -w '%{http_code}\n' --cookie 'hh=wrong' https://your-host/your-path/
 # expect 302
 
 # 5. The unlock page is reachable without a cookie, or there is no way in
-curl -sS -o /dev/null -w '%{http_code}\n' https://your-host/your-path/login.html
+curl -sS -o /dev/null -w '%{http_code}\n' https://your-host/your-path/login
 # expect 200
+
+# 6. A real report resolves for an authenticated visitor - catches both the
+#    redirect loop and the missing try_files
+curl -sSL -o /dev/null -w '%{num_redirects} hops, final %{http_code}\n' \
+  --cookie "hh=$D" https://your-host/your-path/reports/report-x.html
+# expect at most 1 hop and a final 200 - never a redirect loop
 ```
 
-Check 3 is the one people forget. If it returns 200 — or a directory listing —
-the gate is on the wrong location and every report is public.
+Check 3 is the one people forget. If you land anywhere under `/reports/`, the
+gate is on the wrong location and every report is public.

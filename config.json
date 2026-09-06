@@ -172,7 +172,7 @@
     "maxReports": 120,
     "_note2": "Older reports are pruned from the published archive so the index stays readable.",
     "upload": {
-      "enabled": false,
+      "enabled": true,
       "_note": "Set true once VPS_HOST / VPS_USER / VPS_PATH are filled in .env. Uses scp over an SSH key - no password is ever stored."
     }
   }

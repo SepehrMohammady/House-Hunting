@@ -7,15 +7,15 @@
  * the user's own site.
  *
  * Access control is enforced by nginx, not by this code. The login page written
- * here collects a password and stores it in a cookie; nginx compares that cookie
- * and refuses to send any content when it does not match. The distinction
- * matters: a page that downloads the content and then asks JavaScript whether to
- * reveal it protects nothing, because the content already reached the visitor.
- * Here the browser gets a redirect until the cookie is right.
+ * here collects a password, hashes it, and stores the digest in a cookie; nginx
+ * compares that cookie and refuses to send any content when it does not match.
+ * The distinction matters: a page that downloads the content and then asks
+ * JavaScript whether to reveal it protects nothing, because the content already
+ * reached the visitor. Here the browser gets a redirect until the cookie is right.
  *
- * Consequently login.html holds no secret and is safe to publish - the password
- * itself lives only in the nginx configuration on the server, never in this
- * repository, which is public. See docs/deployment.md.
+ * Consequently login.html holds no secret and is safe to publish. The password
+ * itself is never stored anywhere - not in this repository, which is public, and
+ * not on the server, which holds only its SHA-256 digest. See docs/deployment.md.
  *
  * The index carries no personal data: no address, no email, no domain. It is
  * a list of dates and counts, and the report pages themselves contain only
@@ -188,9 +188,10 @@ function buildIndex(reports, config) {
 /**
  * The unlock page. Deliberately contains no secret of any kind.
  *
- * It takes a password, stores it in a cookie scoped to this path, and reloads.
- * nginx does the actual comparison and serves nothing until the cookie matches,
- * so this file is inert on its own - publishing it gives nothing away.
+ * It takes a password, stores its SHA-256 digest in a cookie scoped to this
+ * path, and reloads. nginx does the actual comparison and serves nothing until
+ * the cookie matches, so this file is inert on its own - publishing it gives
+ * nothing away.
  *
  * The cookie is set only for this path, marked Secure so it is never sent over
  * plain HTTP, and SameSite=Lax so another site cannot ride on it. It cannot be
@@ -237,22 +238,34 @@ function buildLoginPage(config) {
     ev.preventDefault();
     var v = document.getElementById('p').value;
     if (!v) return;
-    // Stored verbatim, minus the few characters a cookie value cannot hold
-    // (RFC 6265 forbids whitespace, comma, semicolon, quote and backslash).
-    // Deliberately NOT percent-encoded: the server compares this against the
-    // password as written in its config, and encodeURIComponent would turn
-    // a password like "abc@123" into "abc%40123", so the two would never match.
-    v = v.replace(/[\s",;\\]/g, '');
-    // Scope the cookie to this directory only, derived from where this page is
-    // actually served. Path=/ would send the password to every other page on
-    // the domain, and hard-coding the path would put the deployment location
-    // into a public repository.
-    var base = window.location.pathname.replace(/[^/]*$/, '');
-    // HTTPS only, and not sent on cross-site requests. The server decides
-    // whether it is correct; this only stores it.
-    document.cookie = 'hh=' + v +
-      '; Path=' + base + '; Max-Age=31536000; Secure; SameSite=Lax';
-    window.location.replace('./');
+    // What travels in the cookie is a SHA-256 digest, not the password.
+    //
+    // A cookie value cannot legally hold whitespace, comma, semicolon, quote or
+    // backslash (RFC 6265). Stripping those characters - what this used to do -
+    // silently changes the password, so a password containing one could never
+    // match what the server was configured with, and nothing on either side
+    // would say why. Hashing sidesteps the character set entirely: hex is valid
+    // in a cookie, in an nginx config and in a shell command, so any password
+    // works unchanged.
+    //
+    // It also keeps the plaintext off the server and out of the cookie jar. The
+    // digest is still what grants access - anyone holding it is in - but it does
+    // not disclose the password itself, which may be reused elsewhere.
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)).then(function (buf) {
+      var hex = Array.prototype.map
+        .call(new Uint8Array(buf), function (b) { return b.toString(16).padStart(2, '0'); })
+        .join('');
+      // Scope the cookie to this directory only, derived from where this page is
+      // actually served. Path=/ would send it to every other page on the domain,
+      // and hard-coding the path would put the deployment location into a public
+      // repository.
+      var base = window.location.pathname.replace(/[^/]*$/, '');
+      // HTTPS only, and not sent on cross-site requests. The server decides
+      // whether it is correct; this only stores it.
+      document.cookie = 'hh=' + hex +
+        '; Path=' + base + '; Max-Age=31536000; Secure; SameSite=Lax';
+      window.location.replace('./');
+    });
   });
 </script>
 </body></html>`;
