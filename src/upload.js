@@ -78,6 +78,18 @@ export async function uploadArchive({ publishResult, config, log }) {
     return { uploaded: false, reason: 'scp failed' };
   }
 
+  // The unlock page. Tiny, and only changes when its styling does, but sending
+  // it every run means a fresh server needs no manual seeding. Not fatal if it
+  // fails - the archive itself is already up.
+  const sentLogin = await run(
+    'scp',
+    [...scpOpts, publishResult.loginPath, `${target}:${remote}/`],
+    60000
+  );
+  if (!sentLogin.ok) {
+    log.warn(`upload: login page transfer failed - ${sentLogin.stderr.trim().split('\n')[0]}`);
+  }
+
   // The index goes last: until it lands, the site still shows the previous run
   // rather than linking a report that has not finished uploading.
   const sentIndex = await run('scp', [...scpOpts, localIndex, `${target}:${remote}/`], 60000);

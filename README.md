@@ -158,14 +158,21 @@ Every run writes into `publish/`: the report itself, plus a regenerated
 match / new / price-cut counts. Serve that directory behind a password and you
 have a browsable archive rather than a stream of emails.
 
-Setup — nginx Basic Auth, HTTPS, the upload key, and how to verify it — is in
-[`docs/deployment.md`](docs/deployment.md).
+Setup — the nginx password gate, HTTPS, the upload key, and how to verify it —
+is in [`docs/deployment.md`](docs/deployment.md).
 
-> **The password is enforced by the web server, never by the page.** A password
-> checked in client-side JavaScript is decoration: the browser has already
-> downloaded the content before the check runs, and anyone can open
-> `reports/report-….html` directly. It also never appears in this repository —
-> it lives only in the server's htpasswd file.
+Access is a **single password, no username**. Basic Auth cannot do that (its
+prompt always asks for a username), so a generated `login.html` collects the
+password and nginx checks it.
+
+> **The password is checked by nginx, never by the page.** `login.html` only
+> *stores* what you type, in a cookie; nginx compares that cookie and returns a
+> redirect instead of content when it does not match, so an unauthenticated
+> visitor never receives a byte of the archive. That is the opposite of a
+> JavaScript password check, which merely hides content the browser already
+> downloaded. `login.html` therefore holds no secret and is safe to publish —
+> the password exists only in the nginx config on the server, never in this
+> repository.
 
 Two deployment shapes:
 

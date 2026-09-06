@@ -6,12 +6,16 @@
  * first. The whole directory is then served from a password-protected path on
  * the user's own site.
  *
- * Access control is deliberately NOT implemented here. A password checked in
- * client-side JavaScript is decoration - the page and its markup are already on
- * the visitor's machine by the time it runs. Protection belongs at the web
- * server, where nginx can refuse the request before any content is sent. That
- * setup lives in docs/deployment.md, and the password never enters this
- * repository, which is public.
+ * Access control is enforced by nginx, not by this code. The login page written
+ * here collects a password and stores it in a cookie; nginx compares that cookie
+ * and refuses to send any content when it does not match. The distinction
+ * matters: a page that downloads the content and then asks JavaScript whether to
+ * reveal it protects nothing, because the content already reached the visitor.
+ * Here the browser gets a redirect until the cookie is right.
+ *
+ * Consequently login.html holds no secret and is safe to publish - the password
+ * itself lives only in the nginx configuration on the server, never in this
+ * repository, which is public. See docs/deployment.md.
  *
  * The index carries no personal data: no address, no email, no domain. It is
  * a list of dates and counts, and the report pages themselves contain only
@@ -179,6 +183,81 @@ function buildIndex(reports, config) {
 </body></html>`;
 }
 
+/* ------------------------------ login page ------------------------------ */
+
+/**
+ * The unlock page. Deliberately contains no secret of any kind.
+ *
+ * It takes a password, stores it in a cookie scoped to this path, and reloads.
+ * nginx does the actual comparison and serves nothing until the cookie matches,
+ * so this file is inert on its own - publishing it gives nothing away.
+ *
+ * The cookie is set only for this path, marked Secure so it is never sent over
+ * plain HTTP, and SameSite=Lax so another site cannot ride on it. It cannot be
+ * HttpOnly, because script has to set it; that is an accepted trade for the
+ * password-only prompt, and the pages behind it contain public rental adverts
+ * rather than anything sensitive.
+ */
+function buildLoginPage(config) {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>${esc(config.report.title)}</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:${C.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${C.ink};}
+  .card{background:${C.card};border:1px solid ${C.line};border-radius:10px;padding:32px 30px;
+        width:340px;max-width:calc(100% - 32px);box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  h1{margin:0 0 4px;font-size:19px;}
+  p{margin:0 0 20px;font-size:13px;color:${C.muted};}
+  input{width:100%;box-sizing:border-box;padding:11px 12px;font-size:15px;
+        border:1px solid ${C.line};border-radius:6px;background:#fff;color:${C.ink};}
+  input:focus{outline:none;border-color:${C.cool};box-shadow:0 0 0 3px ${C.coolBg};}
+  button{width:100%;margin-top:12px;padding:11px;font-size:14px;font-weight:600;
+         background:${C.cool};color:#fff;border:0;border-radius:6px;cursor:pointer;}
+  .err{margin-top:14px;padding:9px 11px;border-radius:6px;background:${C.warnBg};
+       color:${C.warn};font-size:12px;font-weight:600;display:none;}
+</style></head>
+<body>
+  <form class="card" id="f" autocomplete="on">
+    <h1>${esc(config.report.title)}</h1>
+    <p>Enter the password to view the reports.</p>
+    <input id="p" type="password" name="password" placeholder="Password"
+           autocomplete="current-password" autofocus>
+    <button type="submit">Unlock</button>
+    <div class="err" id="e">That password was not accepted. Try again.</div>
+  </form>
+<script>
+  // Arriving here with a cookie already set means the server rejected it.
+  if (document.cookie.indexOf('hh=') !== -1) {
+    document.getElementById('e').style.display = 'block';
+  }
+  document.getElementById('f').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var v = document.getElementById('p').value;
+    if (!v) return;
+    // Stored verbatim, minus the few characters a cookie value cannot hold
+    // (RFC 6265 forbids whitespace, comma, semicolon, quote and backslash).
+    // Deliberately NOT percent-encoded: the server compares this against the
+    // password as written in its config, and encodeURIComponent would turn
+    // a password like "abc@123" into "abc%40123", so the two would never match.
+    v = v.replace(/[\s",;\\]/g, '');
+    // Scope the cookie to this directory only, derived from where this page is
+    // actually served. Path=/ would send the password to every other page on
+    // the domain, and hard-coding the path would put the deployment location
+    // into a public repository.
+    var base = window.location.pathname.replace(/[^/]*$/, '');
+    // HTTPS only, and not sent on cross-site requests. The server decides
+    // whether it is correct; this only stores it.
+    document.cookie = 'hh=' + v +
+      '; Path=' + base + '; Max-Age=31536000; Secure; SameSite=Lax';
+    window.location.replace('./');
+  });
+</script>
+</body></html>`;
+}
+
 /* -------------------------------- publish -------------------------------- */
 
 /**
@@ -224,6 +303,11 @@ export function publishReport({ reportPath, config, stats, runAt, log }) {
   const indexPath = path.join(publishDir, 'index.html');
   fs.writeFileSync(indexPath, buildIndex(keep, config), 'utf8');
 
+  // The unlock page. Regenerated each run so a styling change reaches the
+  // server, and cheap enough that keeping it in step is not worth conditioning.
+  const loginPath = path.join(publishDir, 'login.html');
+  fs.writeFileSync(loginPath, buildLoginPage(config), 'utf8');
+
   log.step(
     `publish: ${keep.length} reports in ${cfg.localDir}/` +
       (dropped.length ? ` (pruned ${dropped.length})` : '')
@@ -233,6 +317,7 @@ export function publishReport({ reportPath, config, stats, runAt, log }) {
     published: true,
     publishDir,
     indexPath,
+    loginPath,
     reportFile: file,
     total: keep.length,
     pruned: dropped.length,

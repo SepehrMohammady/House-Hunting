@@ -12,6 +12,7 @@ from your own `.env` and server configuration — **this repository is public.**
 ```
 publish/
   index.html                     archive listing, regenerated every run
+  login.html                     unlock page, served without the cookie
   reports/
     report-2026-09-06T09-55.html one file per run
     report-2026-09-06T06-00.html
@@ -30,50 +31,83 @@ refreshed index — a couple of hundred KB, not the whole archive.
 
 ## Access control
 
-**The password must be enforced by the web server, not by the page.**
+**The check must happen in the web server, not in the page.**
 
 A password checked in client-side JavaScript is decoration: the browser has
 already downloaded the page and everything in it before the check runs, and
-anyone can read the password out of the source or skip straight to
-`reports/report-….html`. The same applies to any "hide the content until the
-right password is typed" scheme.
+anyone can skip straight to `reports/report-….html`. The same applies to any
+"hide the content until the right password is typed" scheme.
 
-Use HTTP Basic Auth in nginx, which refuses the request before sending any
-content, and put it on the directory so it covers the individual reports too —
-not just the index.
+### Why not Basic Auth
 
-Sketch, with your own values substituted:
+Basic Auth is the obvious choice, but its prompt always asks for a username —
+that field is part of the protocol and cannot be removed. For a single-user
+archive where one password is wanted, the cookie gate below gives the same
+server-side enforcement without the extra field, and needs no `htpasswd` file
+(so no `apache2-utils` dependency).
+
+Basic Auth remains a perfectly good option if you would rather have it, and
+comes with browser password-manager support. The two are equivalent in strength:
+both are a shared secret sent over TLS on every request.
+
+### Cookie gate
+
+`login.html` is generated with each run. It collects a password and stores it in
+a cookie scoped to that directory; it performs no validation and contains no
+secret, so it is safe to publish. nginx compares the cookie and returns a
+redirect instead of content when it does not match — an unauthenticated visitor
+never receives a byte of the archive.
+
+At `http` level, outside any `server` block:
 
 ```nginx
+map $cookie_hh $hh_ok {
+    default          0;
+    "your-password"  1;
+}
+```
+
+Inside the HTTPS `server` block:
+
+```nginx
+# The unlock page must stay reachable without the cookie, or there is no way in.
+location = /your-path/login.html {
+    alias /var/www/your-directory/login.html;
+    add_header Cache-Control "no-store" always;
+}
+
 location /your-path/ {
+    if ($hh_ok = 0) {
+        return 302 /your-path/login.html;
+    }
+
     alias /var/www/your-directory/;
     index index.html;
+    autoindex off;
 
-    auth_basic           "Restricted";
-    auth_basic_user_file /etc/nginx/.htpasswd-your-app;
-
-    # Reports are regenerated three times a day; do not let a proxy or the
-    # browser serve a stale one.
-    add_header Cache-Control "no-store, must-revalidate";
+    # Regenerated three times a day; do not let a proxy or the browser serve a
+    # stale copy.
+    add_header Cache-Control "no-store, must-revalidate" always;
     add_header X-Robots-Tag  "noindex, nofollow" always;
 }
 ```
 
-Create the password file with `htpasswd` (from `apache2-utils` /
-`httpd-tools`). Use bcrypt (`-B`); the default algorithm is weak:
+Two things to get right:
 
-```bash
-sudo htpasswd -B -c /etc/nginx/.htpasswd-your-app your-username
-sudo chown root:www-data /etc/nginx/.htpasswd-your-app
-sudo chmod 640 /etc/nginx/.htpasswd-your-app
-```
+- Keep the trailing slashes on both `location` and `alias` — mismatching them is
+  the usual cause of 404s with `alias`.
+- The cookie holds the password **verbatim**, not percent-encoded, so the string
+  in the `map` is exactly what you type. A password must therefore avoid
+  whitespace and `, ; " \`, which RFC 6265 forbids in a cookie value.
 
 ### HTTPS is not optional here
 
-Basic Auth sends the password base64-encoded, which is *encoding*, not
-encryption — trivially reversible by anyone who can see the traffic. Over plain
-HTTP the password is effectively sent in the clear on every request. Serve the
-path only over HTTPS and redirect HTTP to it.
+Whichever method you choose, the secret travels on every request. Over plain
+HTTP a cookie value — like a Basic Auth header — is readable by anyone who can
+see the traffic. Serve the path only over HTTPS and redirect HTTP to it.
+
+The cookie is set with `Secure`, so over plain HTTP it is never sent at all and
+the gate simply locks you out.
 
 ## Upload account
 
@@ -110,15 +144,28 @@ roughly 180 reports of about 200 KB each — well under 40 MB.
 ## Checking it works
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' https://your-host/your-path/
-# expect 401
+# 1. No cookie -> redirected to the unlock page, no content served
+curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}\n' https://your-host/your-path/
+# expect 302 -> .../login.html
 
-curl -sS -o /dev/null -w '%{http_code}\n' -u user:pass https://your-host/your-path/
+# 2. Correct cookie -> content served
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  --cookie 'hh=your-password' https://your-host/your-path/
 # expect 200
 
-curl -sS -o /dev/null -w '%{http_code}\n' https://your-host/your-path/reports/
-# expect 401 - the reports must be protected too, not just the index
+# 3. THE IMPORTANT ONE: reports must be gated too, not just the index
+curl -sS -o /dev/null -w '%{http_code}\n' https://your-host/your-path/reports/report-x.html
+# expect 302
+
+# 4. Wrong password is refused
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  --cookie 'hh=wrong' https://your-host/your-path/
+# expect 302
+
+# 5. The unlock page is reachable without a cookie, or there is no way in
+curl -sS -o /dev/null -w '%{http_code}\n' https://your-host/your-path/login.html
+# expect 200
 ```
 
-That third check is the one people forget. If it returns 200 or a directory
-listing, the auth block is on the wrong location and the reports are public.
+Check 3 is the one people forget. If it returns 200 — or a directory listing —
+the gate is on the wrong location and every report is public.
