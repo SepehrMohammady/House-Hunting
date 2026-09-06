@@ -74,8 +74,16 @@ npm install --omit=dev
 if [ ! -d "$HOME/.cache/ms-playwright" ] && [ ! -d "/home/$RUN_USER/.cache/ms-playwright" ]; then
   read -r -p "Install Chromium for Idealista? (~400 MB) [Y/n] " reply
   if [[ ! "$reply" =~ ^[Nn]$ ]]; then
-    # Installed as the run user, because Playwright looks in that user's cache.
-    sudo -u "$RUN_USER" HOME="/home/$RUN_USER" npx playwright install --with-deps chromium
+    # Two steps, deliberately.
+    #
+    # `--with-deps` shells out to apt through sudo. Running it as the run user
+    # cannot work: that account is created with `adduser --system`, so it has no
+    # password and no sudo rights, and the install stalls forever on a password
+    # prompt nobody can answer. So install the OS libraries here, where this
+    # script is already root, and fetch the browser itself as the run user -
+    # Playwright looks for it in that user's own cache.
+    npx playwright install-deps chromium
+    sudo -u "$RUN_USER" HOME="/home/$RUN_USER" npx playwright install chromium
   else
     echo "Skipping. Set sources.idealista.enabled=false in config.json to silence its warning."
   fi
