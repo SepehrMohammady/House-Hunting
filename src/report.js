@@ -271,11 +271,13 @@ export function buildReport({ matched, nearby, rejected, stats, config, runAt })
 
   const sourceLines = stats.sources
     .map((s) => {
-      const status = s.skipped
-        ? 'skipped'
-        : s.blocked && !s.count
-          ? 'blocked'
-          : `${s.count} ads`;
+      const status = s.resting
+        ? `blocked, retrying ${s.resting}`
+        : s.skipped
+          ? 'skipped'
+          : s.blocked && !s.count
+            ? 'blocked'
+            : `${s.count} ads`;
       const color = s.blocked && !s.count ? C.warn : C.muted;
       const cls = s.blocked && !s.count ? 't-warn' : 't-muted';
       return `<span class="${cls}" style="color:${color};">${esc(s.name)}: ${esc(status)}</span>`;

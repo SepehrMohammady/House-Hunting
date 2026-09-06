@@ -32,7 +32,14 @@ import { dedupe } from './dedupe.js';
 import { assessCredibility } from './credibility.js';
 import { enrichFullText } from './enrich.js';
 import { applyFilters, rejectReason, scoreListing } from './filter.js';
-import { loadStore, saveStore, markChanges } from './store.js';
+import {
+  loadStore,
+  saveStore,
+  markChanges,
+  sourceRestingUntil,
+  recordSourceBlocked,
+  recordSourceOk,
+} from './store.js';
 import { buildReport, writeReport } from './report.js';
 import { sendReport, loadEnv } from './mailer.js';
 import { publishReport, publishesInPlace } from './publish.js';
@@ -97,6 +104,9 @@ async function main() {
       `EUR ${config.budget.maxTotalPerMonth}/month all-in\n`
   );
 
+  // Loaded up front: the fetch loop needs it to know which sources are resting.
+  const store = loadStore();
+
   // ---- 1. Fetch ----------------------------------------------------------
   const all = [];
   const sourceStats = [];
@@ -106,10 +116,33 @@ async function main() {
     if (!cfg?.enabled) continue;
     if (onlyKeys && !onlyKeys.includes(src.key)) continue;
 
+    // A source that has been refusing us is rested rather than retried every
+    // run. Explicitly asking for it with --only overrides that, so there is
+    // always a way to test whether the block has lifted.
+    const restingUntil = onlyKeys ? null : sourceRestingUntil(store, src.key);
+    if (restingUntil) {
+      const at = restingUntil.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Rome',
+      });
+      log.step(`${src.key}: resting after repeated blocks, next attempt ${at}`);
+      sourceStats.push({ name: src.name, count: 0, blocked: true, resting: at, ms: 0 });
+      continue;
+    }
+
     const t0 = Date.now();
     try {
       const { listings, blocked, skipped } = await src.run(config, log);
       all.push(...listings);
+
+      if (listings.length) {
+        recordSourceOk(store, src.key);
+      } else if (blocked && !skipped) {
+        const hours = recordSourceBlocked(store, src.key);
+        log.step(`${src.key}: blocked - resting ${hours}h before trying again`);
+      }
+
       sourceStats.push({
         name: src.name,
         count: listings.length,
@@ -120,6 +153,7 @@ async function main() {
     } catch (err) {
       // One broken portal must not cost us the whole report.
       log.warn(`${src.key}: unexpected failure - ${err.message}`);
+      recordSourceBlocked(store, src.key);
       sourceStats.push({ name: src.name, count: 0, blocked: true, error: err.message, ms: Date.now() - t0 });
     }
   }
@@ -200,7 +234,6 @@ async function main() {
   }
 
   // ---- 6. Diff against the last run -------------------------------------
-  const store = loadStore();
   const { newCount, dropCount } = markChanges([...matched, ...nearby], store);
   saveStore(store);
   if (newCount) log.info(`${newCount} are new since the last run`);

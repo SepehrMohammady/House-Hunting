@@ -15,13 +15,58 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STORE_PATH = path.resolve(__dirname, '..', 'data', 'seen.json');
 
+/* --------------------------- source health --------------------------- */
+
+/**
+ * Back off from a source that keeps refusing us.
+ *
+ * Moving to a datacentre IP got Casa.it and Idealista blocked outright by
+ * DataDome - not by fingerprint, since a real browser is refused too, but by
+ * address range. Retrying both on every run means five pointless 403s a day and,
+ * for Idealista, launching a whole Chromium to fetch nothing.
+ *
+ * Blocks are rarely permanent though, so the source is not disabled: it is
+ * rested for a growing interval and tried again, and one success clears the
+ * record. That recovers by itself if the block lifts or the address changes,
+ * without anyone having to remember to edit config.
+ */
+const BACKOFF_HOURS = [1, 3, 6, 12, 24];
+
+export function sourceRestingUntil(store, key) {
+  const rec = store.sourceHealth?.[key];
+  if (!rec?.skipUntil) return null;
+  const until = new Date(rec.skipUntil);
+  return until.getTime() > Date.now() ? until : null;
+}
+
+export function recordSourceBlocked(store, key) {
+  store.sourceHealth = store.sourceHealth || {};
+  const rec = store.sourceHealth[key] || { blocks: 0 };
+  rec.blocks = (rec.blocks || 0) + 1;
+  const hours = BACKOFF_HOURS[Math.min(rec.blocks - 1, BACKOFF_HOURS.length - 1)];
+  rec.skipUntil = new Date(Date.now() + hours * 3600000).toISOString();
+  rec.lastBlocked = new Date().toISOString();
+  store.sourceHealth[key] = rec;
+  return hours;
+}
+
+/** Any result at all means the block is over - forget the whole history. */
+export function recordSourceOk(store, key) {
+  if (store.sourceHealth?.[key]) delete store.sourceHealth[key];
+}
+
 export function loadStore() {
   try {
     const raw = fs.readFileSync(STORE_PATH, 'utf8');
     const parsed = JSON.parse(raw);
-    return { seen: parsed.seen || {}, lastRun: parsed.lastRun || null };
+    return {
+      seen: parsed.seen || {},
+      lastRun: parsed.lastRun || null,
+      sourceHealth: parsed.sourceHealth || {},
+    };
   } catch {
-    return { seen: {}, lastRun: null }; // first run, or the file was corrupted
+    // First run, or the file was corrupted.
+    return { seen: {}, lastRun: null, sourceHealth: {} };
   }
 }
 
