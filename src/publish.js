@@ -25,7 +25,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { esc, C } from './report.js';
+import { esc } from './report.js';
+import { C, D, styleBlock, themeToggle } from './theme.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -79,11 +80,11 @@ function groupByDay(reports) {
   return days;
 }
 
-function statCell(value, label, colour = C.ink) {
+function statCell(value, label, colour = C.ink, tone = 't-ink') {
   return (
-    `<td style="padding:0 20px 0 0;">` +
-    `<div style="font-size:23px;font-weight:700;color:${colour};">${value}</div>` +
-    `<div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;">${esc(label)}</div>` +
+    `<td class="stat" style="padding:0 20px 0 0;">` +
+    `<div class="${tone}" style="font-size:23px;font-weight:700;color:${colour};">${value}</div>` +
+    `<div class="t-muted" style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;">${esc(label)}</div>` +
     `</td>`
   );
 }
@@ -95,37 +96,37 @@ function buildIndex(reports, config) {
   const rows = [];
   for (const [day, entries] of days) {
     rows.push(
-      `<tr><td colspan="5" style="padding:18px 14px 6px;font-size:12px;font-weight:700;` +
+      `<tr><td class="t-muted" colspan="5" style="padding:18px 14px 6px;font-size:12px;font-weight:700;` +
         `color:${C.muted};text-transform:uppercase;letter-spacing:.6px;">${esc(day)}</td></tr>`
     );
 
     for (const r of entries) {
       const isLatest = r.file === latest.file;
       const newBadge = r.newCount
-        ? `<span style="display:inline-block;padding:1px 7px;border-radius:9px;background:${C.goodBg};` +
+        ? `<span class="chip-good" style="display:inline-block;padding:1px 7px;border-radius:9px;background:${C.goodBg};` +
           `color:${C.good};font-size:11px;font-weight:700;">${r.newCount} new</span>`
-        : `<span style="color:${C.muted};font-size:11px;">&mdash;</span>`;
+        : `<span class="t-muted" style="color:${C.muted};font-size:11px;">&mdash;</span>`;
 
       const cuts = r.dropCount
-        ? `<span style="display:inline-block;padding:1px 7px;border-radius:9px;background:${C.warnBg};` +
+        ? `<span class="chip-warn" style="display:inline-block;padding:1px 7px;border-radius:9px;background:${C.warnBg};` +
           `color:${C.warn};font-size:11px;font-weight:700;">${r.dropCount} cut</span>`
-        : `<span style="color:${C.muted};font-size:11px;">&mdash;</span>`;
+        : `<span class="t-muted" style="color:${C.muted};font-size:11px;">&mdash;</span>`;
 
       rows.push(
-        `<tr style="border-bottom:1px solid ${C.line};background:${isLatest ? C.coolBg : C.card};">` +
+        `<tr class="row ${isLatest ? 'row-hl' : 'row-a'}" style="border-bottom:1px solid ${C.line};background:${isLatest ? C.coolBg : C.card};">` +
           `<td style="padding:11px 14px;white-space:nowrap;">` +
-          `<a href="reports/${esc(r.file)}" style="color:${C.cool};font-size:14px;font-weight:700;text-decoration:none;">` +
+          `<a class="t-cool" href="reports/${esc(r.file)}" style="color:${C.cool};font-size:14px;font-weight:700;text-decoration:none;">` +
           `${esc(fmtTime(r.runAt))}</a>` +
           (isLatest
-            ? `<span style="margin-left:8px;font-size:10px;color:${C.cool};font-weight:700;">LATEST</span>`
+            ? `<span class="t-cool" style="margin-left:8px;font-size:10px;color:${C.cool};font-weight:700;">LATEST</span>`
             : '') +
           `</td>` +
-          `<td style="padding:11px 8px;font-size:14px;font-weight:600;color:${C.ink};">${r.matchedCount}` +
-          `<span style="color:${C.muted};font-weight:400;font-size:12px;"> matches</span></td>` +
+          `<td class="t-ink" style="padding:11px 8px;font-size:14px;font-weight:600;color:${C.ink};">${r.matchedCount}` +
+          `<span class="t-muted" style="color:${C.muted};font-weight:400;font-size:12px;"> matches</span></td>` +
           `<td style="padding:11px 8px;">${newBadge}</td>` +
           `<td style="padding:11px 8px;">${cuts}</td>` +
-          `<td style="padding:11px 14px;text-align:right;">` +
-          `<a href="reports/${esc(r.file)}" style="display:inline-block;padding:6px 13px;background:${C.cool};` +
+          `<td class="i-open" style="padding:11px 14px;text-align:right;">` +
+          `<a class="btn" href="reports/${esc(r.file)}" style="display:inline-block;padding:6px 13px;background:${C.cool};` +
           `color:#fff;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;">Open</a></td>` +
           `</tr>`
       );
@@ -142,27 +143,35 @@ function buildIndex(reports, config) {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>${esc(config.report.title)} - Archive</title></head>
+<meta name="color-scheme" content="light dark">
+<title>${esc(config.report.title)} - Archive</title>
+${styleBlock('index')}
+</head>
 <body style="margin:0;padding:0;background:${C.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${C.ink};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.bg};padding:22px 10px;">
+<table role="presentation" class="sheet-wrap" width="100%" cellpadding="0" cellspacing="0" style="background:${C.bg};padding:22px 10px;">
 <tr><td align="center">
-<table role="presentation" width="820" cellpadding="0" cellspacing="0" style="width:820px;max-width:100%;background:${C.card};border-radius:10px;border:1px solid ${C.line};overflow:hidden;">
+<table role="presentation" class="sheet" width="820" cellpadding="0" cellspacing="0" style="width:820px;max-width:100%;background:${C.card};border-radius:10px;border:1px solid ${C.line};overflow:hidden;">
 
-  <tr><td colspan="5" style="padding:24px 24px 20px;border-bottom:1px solid ${C.line};">
-    <div style="font-size:22px;font-weight:700;">${esc(config.report.title)}</div>
-    <div style="font-size:12px;color:${C.muted};margin-top:4px;">
-      Updated at 06:00, 12:00 and 18:00 Rome time &middot; ${esc(reports.length)} reports kept
-    </div>
+  <tr><td class="hdr" colspan="5" style="padding:24px 24px 20px;border-bottom:1px solid ${C.line};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="vertical-align:top;">
+        <div class="t-ink" style="font-size:22px;font-weight:700;color:${C.ink};">${esc(config.report.title)}</div>
+        <div class="t-muted" style="font-size:12px;color:${C.muted};margin-top:4px;">
+          Updated at 06:00, 12:00 and 18:00 Rome time &middot; ${esc(reports.length)} report${reports.length === 1 ? '' : 's'} kept
+        </div>
+      </td>
+      <td style="vertical-align:top;text-align:right;white-space:nowrap;">${themeToggle()}</td>
+    </tr></table>
     ${
       latest
         ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:18px;"><tr>` +
           statCell(latest.matchedCount, 'in your areas') +
-          statCell(latest.newCount, 'new last run', latest.newCount ? C.good : C.ink) +
-          statCell(latest.dropCount, 'price cuts', latest.dropCount ? C.warn : C.ink) +
+          statCell(latest.newCount, 'new last run', latest.newCount ? C.good : C.ink, latest.newCount ? 't-good' : 't-ink') +
+          statCell(latest.dropCount, 'price cuts', latest.dropCount ? C.warn : C.ink, latest.dropCount ? 't-warn' : 't-ink') +
           statCell(latest.scanned, 'ads scanned') +
           `</tr></table>` +
           `<div style="margin-top:18px;">` +
-          `<a href="reports/${esc(latest.file)}" style="display:inline-block;padding:10px 18px;background:${C.cool};` +
+          `<a class="btn" href="reports/${esc(latest.file)}" style="display:inline-block;padding:10px 18px;background:${C.cool};` +
           `color:#fff;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none;">` +
           `Open latest report &rarr;</a></div>`
         : ''
@@ -171,7 +180,7 @@ function buildIndex(reports, config) {
 
   ${rows.join('')}
 
-  <tr><td colspan="5" style="padding:16px 24px;border-top:1px solid ${C.line};background:${C.bg};font-size:11px;color:${C.muted};line-height:1.6;">
+  <tr><td class="band t-muted" colspan="5" style="padding:16px 24px;border-top:1px solid ${C.line};background:${C.bg};font-size:11px;color:${C.muted};line-height:1.6;">
     Reports older than ${config.publish.keepDays} days are removed automatically.<br>
     Prices shown are estimated all-in totals (rent + condo fees + utilities). Always confirm the real
     figure, and whether <strong>residenza</strong> is granted, before signing anything.<br>
@@ -204,21 +213,39 @@ function buildLoginPage(config) {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light dark">
 <title>${esc(config.report.title)}</title>
 <style>
+  /* This page is only ever viewed in a browser - never emailed - so it can use
+     custom properties, which the report cannot. Dark mode is then one block of
+     re-declared tokens rather than an !important override of every rule. */
+  :root{
+    color-scheme: light dark;
+    --bg:${C.bg}; --card:${C.card}; --ink:${C.ink}; --muted:${C.muted};
+    --line:${C.line}; --cool:${C.cool}; --coolBg:${C.coolBg};
+    --warn:${C.warn}; --warnBg:${C.warnBg}; --field:#ffffff; --onCool:#ffffff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:${D.bg}; --card:${D.card}; --ink:${D.ink}; --muted:${D.muted};
+      --line:${D.line}; --cool:${D.cool}; --coolBg:${D.coolBg};
+      --warn:${D.warn}; --warnBg:${D.warnBg}; --field:${D.bg}; --onCool:#0d1117;
+    }
+  }
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-       background:${C.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${C.ink};}
-  .card{background:${C.card};border:1px solid ${C.line};border-radius:10px;padding:32px 30px;
-        width:340px;max-width:calc(100% - 32px);box-shadow:0 1px 3px rgba(0,0,0,.06);}
-  h1{margin:0 0 4px;font-size:19px;}
-  p{margin:0 0 20px;font-size:13px;color:${C.muted};}
-  input{width:100%;box-sizing:border-box;padding:11px 12px;font-size:15px;
-        border:1px solid ${C.line};border-radius:6px;background:#fff;color:${C.ink};}
-  input:focus{outline:none;border-color:${C.cool};box-shadow:0 0 0 3px ${C.coolBg};}
-  button{width:100%;margin-top:12px;padding:11px;font-size:14px;font-weight:600;
-         background:${C.cool};color:#fff;border:0;border-radius:6px;cursor:pointer;}
-  .err{margin-top:14px;padding:9px 11px;border-radius:6px;background:${C.warnBg};
-       color:${C.warn};font-size:12px;font-weight:600;display:none;}
+       padding:20px;box-sizing:border-box;
+       background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--ink);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:32px 30px;
+        width:340px;max-width:100%;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  h1{margin:0 0 4px;font-size:19px;color:var(--ink);}
+  p{margin:0 0 20px;font-size:13px;color:var(--muted);}
+  input{width:100%;box-sizing:border-box;padding:11px 12px;font-size:16px;
+        border:1px solid var(--line);border-radius:6px;background:var(--field);color:var(--ink);}
+  input:focus{outline:none;border-color:var(--cool);box-shadow:0 0 0 3px var(--coolBg);}
+  button{width:100%;margin-top:12px;padding:12px;font-size:15px;font-weight:600;
+         background:var(--cool);color:var(--onCool);border:0;border-radius:6px;cursor:pointer;}
+  .err{margin-top:14px;padding:9px 11px;border-radius:6px;background:var(--warnBg);
+       color:var(--warn);font-size:12px;font-weight:600;display:none;}
 </style></head>
 <body>
   <form class="card" id="f" autocomplete="on">

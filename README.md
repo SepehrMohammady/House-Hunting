@@ -185,6 +185,20 @@ Two deployment shapes:
 Retention is bounded by `publish.keepDays` (60) and `publish.maxReports` (120);
 old reports are pruned locally and on the server.
 
+### Reading it on a phone
+
+The report and the archive both stack into single-column cards on anything
+narrower than the table needs, so there is no sideways scrolling. The breakpoint
+is tied to the actual table width rather than a round number — a table grows to
+fit its content, so `max-width:100%` alone does not stop a fixed-width row from
+overflowing, and a breakpoint below the table width leaves a dead zone that every
+tablet lands in.
+
+**Dark and light follow the device**, via `prefers-color-scheme`. A toggle in the
+header overrides it and is remembered in that browser; clearing site data returns
+to following the device. The toggle is hidden unless scripting is available, so
+an emailed report never shows a dead button.
+
 ### Email (optional)
 
 Still works if you want it as well. Copy `.env.example` to `.env`, set
