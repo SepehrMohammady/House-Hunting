@@ -13,7 +13,8 @@
     "idealista": "node src/index.js --only=idealista",
     "install-browser": "npx playwright install chromium",
     "test": "node --test tests/logic.test.mjs",
-    "audit": "node scripts/audit.mjs"
+    "audit": "node scripts/audit.mjs",
+    "audit:secrets": "node scripts/audit-secrets.mjs"
   },
   "dependencies": {
     "nodemailer": "^6.9.16",
