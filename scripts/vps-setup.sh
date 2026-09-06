@@ -133,12 +133,17 @@ StandardOutput=append:${PROJECT_DIR}/data/run.log
 StandardError=append:${PROJECT_DIR}/data/run.log
 EOF
 
+# $SCHEDULE is one OnCalendar spec per line, and a single spec contains a space
+# ("*-*-* 08,11,..."). It therefore has to be prefixed line by line: passing it
+# unquoted to printf splits it on that space instead, which silently yields a
+# bare "OnCalendar=*-*-*" - a valid spec meaning midnight - and systemd unions
+# every OnCalendar line, so the timer gains a run nobody asked for.
 sudo tee "/etc/systemd/system/${SERVICE_NAME}.timer" >/dev/null <<EOF
 [Unit]
 Description=Run the Genoa house finder on schedule
 
 [Timer]
-$(printf 'OnCalendar=%s\n' $SCHEDULE)
+$(printf '%s\n' "$SCHEDULE" | sed 's/^/OnCalendar=/')
 # Catch up a run the server missed while rebooting.
 Persistent=true
 # Portals see five identical requests at the same second every day otherwise.
