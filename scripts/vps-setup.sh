@@ -103,6 +103,13 @@ else
   echo "Updated PUBLISH_DIR=$WEB_DIR in .env"
 fi
 
+# Everything inside data/ is git-ignored, and git does not track empty
+# directories, so a fresh clone has no data/ at all. The unit below sends both
+# streams to data/run.log with `append:`, and systemd will not create a missing
+# parent for that - it fails the whole service with 209/STDOUT before node is
+# ever reached, which reads like a crash rather than a missing directory.
+sudo mkdir -p "$PROJECT_DIR/data"
+
 # The scanner writes reports, its state file and its log, so it needs the
 # project directory as well as the web directory.
 sudo chown -R "$RUN_USER":"$RUN_USER" "$PROJECT_DIR"
