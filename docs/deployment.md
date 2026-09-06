@@ -90,11 +90,15 @@ Put the public half in the server user's `authorized_keys` and set
 `BatchMode=yes`, so it fails fast rather than hanging on a prompt if the key is
 wrong — which matters for an unattended 06:00 run.
 
-Consider restricting the key in `authorized_keys`:
+Restrict the key in `authorized_keys`:
 
 ```
-restrict,pty ssh-ed25519 AAAA... house-finder upload
+restrict ssh-ed25519 AAAA... house-finder upload
 ```
+
+`restrict` disables port forwarding, agent forwarding, X11 and tty allocation.
+The uploader only runs `scp` and non-interactive `ssh host 'command'`, neither of
+which needs a tty, so no exception is required.
 
 ## Retention
 
