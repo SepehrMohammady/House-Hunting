@@ -1,0 +1,25 @@
+{
+  "name": "genoa-house-finder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scans Italian rental portals for 2-bedroom furnished flats in central/eastern Genoa and builds an HTML report.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "run": "node src/index.js",
+    "dry": "node src/index.js --no-email",
+    "open": "node src/index.js --open",
+    "idealista": "node src/index.js --only=idealista",
+    "install-browser": "npx playwright install chromium",
+    "test": "node --test tests/logic.test.mjs",
+    "audit": "node scripts/audit.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16",
+    "playwright": "^1.49.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

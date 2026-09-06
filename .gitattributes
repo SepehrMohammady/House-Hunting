@@ -1,0 +1,20 @@
+# Normalise line endings so the same checkout works on Windows now and on the
+# Linux VPS later.
+
+# Let git decide for text files, storing LF in the repository.
+* text=auto
+
+# Shell scripts must keep LF even when checked out on Windows. A CRLF shebang
+# makes Linux fail with "bad interpreter: /usr/bin/env bash^M", which is exactly
+# the trap waiting on the VPS deployment path.
+*.sh text eol=lf
+
+# Windows-only scripts are the mirror case: cmd.exe wants CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Never touch binaries.
+*.png binary
+*.jpg binary
+*.ico binary
