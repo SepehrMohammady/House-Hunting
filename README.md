@@ -7,7 +7,7 @@ single tidy HTML report with photos, full details and contact numbers.
 ```
 npm install
 npm run install-browser     # one-time, for Idealista
-npm start                   # run now, writes reports/latest.html
+npm start                   # run now, writes reports/ and publish/
 ```
 
 ---
@@ -151,16 +151,43 @@ Installs a systemd timer on the same schedule and pins the timezone to
 disable Idealista or let the script install Chromium's libraries — expect
 DataDome to challenge more often from a datacentre IP than from home.
 
-## Email delivery
+## Getting the reports
 
-Currently **off** — reports are written to `reports/`. To switch it on:
+Every run writes into `publish/`: the report itself, plus a regenerated
+`index.html` listing every report kept, newest first, grouped by day with its
+match / new / price-cut counts. Serve that directory behind a password and you
+have a browsable archive rather than a stream of emails.
 
-1. `cp .env.example .env` and fill in SMTP details (Gmail needs an
-   [App Password](https://myaccount.google.com/apppasswords), not your normal one).
-2. Set `email.enabled: true` in `config.json`.
+Setup — nginx Basic Auth, HTTPS, the upload key, and how to verify it — is in
+[`docs/deployment.md`](docs/deployment.md).
 
-It already sends to ``; the report HTML is written for
-email clients (table layout, inline styles) so it renders correctly in Gmail.
+> **The password is enforced by the web server, never by the page.** A password
+> checked in client-side JavaScript is decoration: the browser has already
+> downloaded the content before the check runs, and anyone can open
+> `reports/report-….html` directly. It also never appears in this repository —
+> it lives only in the server's htpasswd file.
+
+Two deployment shapes:
+
+- **Scanner runs on the web server** — point `publish.localDir` at the served
+  directory, leave upload off. Files land in place; nothing is transferred.
+- **Scanner runs elsewhere** — fill in `VPS_*` in `.env` and set
+  `publish.upload.enabled: true`. Each run sends only the new report and the
+  refreshed index over SSH (key auth, never a password).
+
+Retention is bounded by `publish.keepDays` (60) and `publish.maxReports` (120);
+old reports are pruned locally and on the server.
+
+### Email (optional)
+
+Still works if you want it as well. Copy `.env.example` to `.env`, set
+`REPORT_EMAIL_TO` and the SMTP values (Gmail needs an
+[App Password](https://myaccount.google.com/apppasswords)), then set
+`email.enabled: true`. The report HTML is written for email clients — table
+layout, inline styles — so it renders correctly in Gmail.
+
+**No address, domain, server or password is stored in this repository.** It is
+public, so all of that lives in `.env`, which is git-ignored.
 
 ## Reading the report
 
@@ -188,6 +215,7 @@ email clients (table layout, inline styles) so it renders correctly in Gmail.
 | `npm run audit -- --rejects` | What got filtered out, and why |
 | `npm test` | 33 tests over the tricky conversions |
 | `npm start -- --only=subito` | One source only |
+| `npm start -- --no-upload` | Build the archive locally, do not send it to the server |
 
 ## If a source stops working
 

@@ -4,3 +4,6 @@ data/seen.json
 data/run.log
 data/.browser-profile/
 reports/*.html
+publish/
+data/reports-index.json
+VPS-SETUP-PROMPT.md

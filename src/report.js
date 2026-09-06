@@ -17,7 +17,7 @@ const ROOT = path.resolve(__dirname, '..');
 
 /* --------------------------- small helpers --------------------------- */
 
-const esc = (s) =>
+export const esc = (s) =>
   String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -25,9 +25,9 @@ const esc = (s) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-const eur = (n) => (Number.isFinite(n) ? `€ ${n.toLocaleString('it-IT')}` : '—');
+export const eur = (n) => (Number.isFinite(n) ? `€ ${n.toLocaleString('it-IT')}` : '—');
 
-const C = {
+export const C = {
   ink: '#1a1d21',
   muted: '#6b7280',
   line: '#e5e7eb',

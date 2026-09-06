@@ -154,12 +154,26 @@
     "to": "",
     "subjectPrefix": "[Genoa Homes]",
     "onlyIfNewListings": false,
-    "_note2": "true = skip sending when nothing new appeared since the last run."
+    "_note2": "true = skip sending when nothing new appeared since the last run.",
+    "_note3": "Recipient is deliberately NOT stored here - this repo is public. Set REPORT_EMAIL_TO in .env instead."
   },
   "network": {
     "requestDelayMs": 700,
     "_note": "Politeness delay between requests to the same site. Do not set below 400.",
     "timeoutMs": 30000,
     "retries": 2
+  },
+  "publish": {
+    "_comment": "Publishes reports to a password-protected page on your own site. Nothing identifying lives here - the domain, server and credentials all come from .env, which is git-ignored.",
+    "enabled": true,
+    "localDir": "publish",
+    "_note": "Reports are assembled here first. If the scanner runs ON the web server, point this straight at the served directory and leave upload disabled.",
+    "keepDays": 60,
+    "maxReports": 120,
+    "_note2": "Older reports are pruned from the published archive so the index stays readable.",
+    "upload": {
+      "enabled": false,
+      "_note": "Set true once VPS_HOST / VPS_USER / VPS_PATH are filled in .env. Uses scp over an SSH key - no password is ever stored."
+    }
   }
 }

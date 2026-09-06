@@ -63,6 +63,14 @@ export async function sendReport({ html, config, stats, runAt, log }) {
     return { sent: false, reason: 'missing credentials' };
   }
 
+  // The recipient lives in .env, not config.json: this repository is public and
+  // an email address in a committed file is an address in everyone's clone.
+  const recipient = env.REPORT_EMAIL_TO || config.email.to;
+  if (!recipient) {
+    log.warn('email: no recipient - set REPORT_EMAIL_TO in .env');
+    return { sent: false, reason: 'no recipient' };
+  }
+
   let nodemailer;
   try {
     nodemailer = (await import('nodemailer')).default;
@@ -96,7 +104,7 @@ export async function sendReport({ html, config, stats, runAt, log }) {
   try {
     const info = await transport.sendMail({
       from: env.SMTP_FROM || env.SMTP_USER,
-      to: config.email.to,
+      to: recipient,
       subject,
       html,
       text:
@@ -104,7 +112,7 @@ export async function sendReport({ html, config, stats, runAt, log }) {
         `(${stats.newCount} new since the last run). ` +
         `Open this email in HTML to see the full report.`,
     });
-    log.step(`email: sent to ${config.email.to} (${info.messageId})`);
+    log.step(`email: sent (${info.messageId})`);
     return { sent: true, messageId: info.messageId };
   } catch (err) {
     log.warn(`email: send failed - ${err.message}`);

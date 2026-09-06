@@ -12,6 +12,7 @@
  * Flags:
  *   --only=subito,casa   run just these sources
  *   --no-email           force-skip email regardless of config
+ *   --no-upload          build the archive locally but do not send it to the server
  *   --open               open the finished report in the default browser
  *   --quiet              only warnings and the summary
  */
@@ -33,7 +34,9 @@ import { enrichFullText } from './enrich.js';
 import { applyFilters, rejectReason, scoreListing } from './filter.js';
 import { loadStore, saveStore, markChanges } from './store.js';
 import { buildReport, writeReport } from './report.js';
-import { sendReport } from './mailer.js';
+import { sendReport, loadEnv } from './mailer.js';
+import { publishReport } from './publish.js';
+import { uploadArchive } from './upload.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -217,12 +220,18 @@ async function main() {
   const [reportPath] = writeReport(html, config, runAt);
   log.info(`\nReport written to ${path.relative(ROOT, reportPath)}`);
 
-  // ---- 8. Email (dormant until configured) ------------------------------
+  // ---- 8. Publish to the archive ----------------------------------------
+  const publishResult = publishReport({ reportPath, config, stats, runAt, log });
+  if (publishResult.published && !hasFlag('--no-upload')) {
+    await uploadArchive({ publishResult, config, log });
+  }
+
+  // ---- 9. Email (dormant until configured) ------------------------------
   if (!hasFlag('--no-email')) {
     await sendReport({ html, config, stats, runAt, log });
   }
 
-  // ---- 9. Optionally open it --------------------------------------------
+  // ---- 10. Optionally open it --------------------------------------------
   if (hasFlag('--open') || config.report.openInBrowserAfterRun) {
     const latest = path.join(ROOT, config.report.outputDir, 'latest.html');
     const target = fs.existsSync(latest) ? latest : reportPath;
@@ -234,6 +243,12 @@ async function main() {
     } else {
       execFile('xdg-open', [target], () => {});
     }
+  }
+
+  // The site URL lives in .env, never in config.json - this repo is public.
+  const siteUrl = loadEnv().PUBLISH_SITE_URL;
+  if (publishResult.published && siteUrl) {
+    log.info(`Archive: ${siteUrl.replace(/\/+$/, '')}/`);
   }
 
   // A concise tail so a scheduled run leaves something readable in the log.
