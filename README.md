@@ -46,6 +46,54 @@ Everything lives in [`config.json`](config.json), which is commented throughout.
   up the ranking rather than excluding everything without them. A/C is rare in
   Genoa (~9% of matches), so requiring it would empty the report.
 
+## Contract type and residenza
+
+No portal offers a filter for either, so both are read from the ad text
+([`src/contract.js`](src/contract.js)). **Long-term leases only** — these are
+excluded when the ad says so:
+
+| Excluded | Why |
+|---|---|
+| **Contratto transitorio** | Capped at 18 months, needs a documented temporary reason, no right of renewal |
+| **Short-term / tourist** | `affitti brevi`, `locazione turistica`, seasonal, weekly, `trasfertisti` |
+| **Students only** | `contratto per studenti universitari` — restricted to enrolled students |
+
+On a live run that removed **20 transitorio, 9 short-term and 5 students-only**
+listings that had otherwise passed every filter.
+
+Subito ads carrying a **CIN** (Codice Identificativo Nazionale) are treated as
+short-term regardless of wording — Italian law requires one for tourist lets, so
+it is a fact about the listing rather than a claim in its prose.
+
+Detection is negation-aware. A real ad reading *"SOLAMENTE USO STUDENTI, NO
+TRASFERTISTI"* is a student let advertising that it refuses short-stay workers;
+matching `trasfertisti` naively classified it as the opposite.
+
+### Residenza
+
+Whether you may register your official residence at the address — needed for
+**permesso di soggiorno, tessera sanitaria and carta d'identità**. Some landlords
+refuse it to avoid tax and paperwork, and rarely volunteer that until asked.
+
+Every listing carries one of two chips:
+
+- **residenza offered** — the ad says so explicitly. Worth a large ranking boost;
+  it is uncommon and expensive to discover you cannot get it after signing.
+- **residenza: ask** — the ad is silent, which is the overwhelming majority.
+  Treated as a question to put to the landlord, never as a no.
+
+Ads that *explicitly refuse* residenza are dropped. Set `contract.residenza` to
+`"required"` in `config.json` to keep only ads that confirm it in writing — but
+expect very few results, since almost nobody states it.
+
+Where a chip reads **"residenza: ask (ad text limited)"**, the source gave only a
+headline rather than the full ad, so "not stated" is weaker evidence than usual.
+That is nearly always Immobiliare, whose list API returns just a marketing
+caption. The run tries to open those ads in a browser to read the full body, but
+Immobiliare's bot protection refuses detail pages more often than not; when it
+does, the run gives up after three attempts and moves on. Set
+`sources.immobiliare.fetchFullText: false` to skip the attempt entirely.
+
 ### Your 12 areas
 
 Eight are tagged directly by the portals: Albaro, Piazza Manin, Carignano, Molo,
@@ -125,6 +173,9 @@ email clients (table layout, inline styles) so it renders correctly in Gmail.
 - `furnished?` / `A/C?` — the ad never said. Not a "no": most Italian ads simply
   omit these. Ask when you call.
 - **private owner** — no agency commission (usually 1–2 months' rent).
+- **residenza: ask** — the ad never mentions it. Raise it on the first call, before
+  you view: it decides whether the address can support your permesso di soggiorno.
+- **long-term contract** — the ad names a 4+4, 3+2 or canone concordato lease.
 
 ## Commands
 
@@ -135,7 +186,7 @@ email clients (table layout, inline styles) so it renders correctly in Gmail.
 | `npm run audit` | Text diagnostics — why listings were kept or dropped |
 | `npm run audit -- --zones` | Match count per target area |
 | `npm run audit -- --rejects` | What got filtered out, and why |
-| `npm test` | 26 tests over the tricky conversions |
+| `npm test` | 33 tests over the tricky conversions |
 | `npm start -- --only=subito` | One source only |
 
 ## If a source stops working
@@ -156,6 +207,16 @@ Europa returned no matches** — not a bug. The 2-bedroom furnished stock in tho
 central areas is priced above €1000/month all-in, or is one-bedroom. Most supply
 in budget sits in Albaro, Molo, San Martino, Piazza Manin and Via Torti.
 
-If you want more results, the highest-yield changes are: raise
-`budget.maxTotalPerMonth`, or set `property.furnished` to `"preferred"` — a
-significant number of ads simply never state it.
+Excluding transitorio, short-term and students-only leases removes a further ~35
+listings per run, which is why the match count sits near 27 rather than 60. That
+is the cost of insisting on a long-term contract, and it is the right trade —
+those leases could not have given you residenza or renewal rights anyway.
+
+If you want more results, in order of yield:
+
+1. Raise `budget.maxTotalPerMonth` — the single biggest constraint.
+2. Set `property.furnished` to `"preferred"` — many ads simply never state it.
+3. Set `contract.excludeStudentOnly: false` if you are enrolled at UniGe.
+
+Do **not** loosen `contract.excludeTransitorio` to get more results: an 18-month
+lease with no renewal right is not a home, and it will not support residenza.

@@ -1,34 +1,39 @@
 {
   "_comment": "Edit this file to tune your search. Nothing else needs changing for normal use.",
-
   "budget": {
     "maxTotalPerMonth": 1000,
     "_note": "Your hard ceiling: rent + condo fees (spese condominiali) + utilities (bollette).",
-
     "searchRentCap": 950,
     "_note2": "We query the portals up to this rent, then compute the real all-in total below and drop anything over maxTotalPerMonth. Keep this ABOVE your comfort rent so 'spese incluse' bargains still get found.",
-
     "assumedUtilitiesPerMonth": 110,
     "_note3": "Electricity + gas + water + internet estimate for a small furnished flat in Genoa. Used when the ad does not say bills are included.",
-
     "assumedCondoFeesPerMonth": 90,
     "_note4": "Fallback 'spese condominiali' when the ad does not state them. Genoa averages EUR 70-120/month for a 2-bed."
   },
-
   "property": {
     "bedrooms": 2,
     "_note": "Italian ads count TOTAL rooms ('locali'), not bedrooms. 2 bedrooms = 'trilocale' = 3 locali. We handle that conversion automatically.",
     "allowBedroomsPlusOne": true,
     "_note2": "Also keep 3-bedroom flats if they fit the budget - often good value.",
-
     "furnished": "required",
     "_note3": "'required' | 'preferred' | 'any'. 'required' drops ads explicitly marked NON arredato.",
-
     "minSurfaceSqm": 45,
     "maxSurfaceSqm": 0,
     "_note4": "maxSurfaceSqm 0 = no upper limit."
   },
-
+  "contract": {
+    "_comment": "Lease type and residenza. None of this is a filter any portal offers, so it is read from the ad text - see src/contract.js.",
+    "excludeTransitorio": true,
+    "_note": "'Contratto transitorio' is capped at 18 months, needs a documented temporary reason, and has no right of renewal. Not a basis for settling.",
+    "excludeShortTerm": true,
+    "_note2": "Tourist lets, weekly/seasonal stays, and flats aimed at 'trasfertisti' (workers on short assignment).",
+    "excludeStudentOnly": true,
+    "_note3": "'Contratto per studenti universitari' is restricted to enrolled students and runs 6 months to 3 years. Set false if you are enrolled at UniGe.",
+    "residenza": "preferred",
+    "_note4": "'required' | 'preferred' | 'any'. Residenza is the right to register your official residence at the address - needed for permesso di soggiorno, tessera sanitaria and carta d'identita. Most ads never mention it, so 'required' would empty the report: 'preferred' drops only ads that explicitly REFUSE it and marks the rest 'ask'.",
+    "residenzaBonus": 30,
+    "_note5": "Ranking boost when an ad explicitly offers residenza. High, because it is hard to find and expensive to discover you cannot get it."
+  },
   "preferences": {
     "_note": "Not filters - these add points to the ranking score so the best matches sort to the top.",
     "elevator": 25,
@@ -42,37 +47,99 @@
     "privateOwnerNotAgency": 8,
     "_note2": "privateOwner scores because you avoid the agency commission (usually 1-2 months rent)."
   },
-
   "zones": {
     "_note": "Your 12 target areas. 'weight' boosts ranking for the areas you like most - tune freely from 0 to 30.",
     "targets": [
-      { "key": "albaro",       "label": "Albaro",           "weight": 20 },
-      { "key": "manin",        "label": "Piazza Manin",     "weight": 18 },
-      { "key": "assarotti",    "label": "Via Assarotti",    "weight": 18 },
-      { "key": "xxsettembre",  "label": "Via XX Settembre", "weight": 16 },
-      { "key": "carignano",    "label": "Carignano",        "weight": 16 },
-      { "key": "molo",         "label": "Molo",             "weight": 10 },
-      { "key": "foce",         "label": "Foce",             "weight": 18 },
-      { "key": "corsoeuropa",  "label": "Corso Europa",     "weight": 12 },
-      { "key": "brignole",     "label": "Brignole",         "weight": 16 },
-      { "key": "sanmartino",   "label": "San Martino",      "weight": 14 },
-      { "key": "sanvincenzo",  "label": "San Vincenzo",     "weight": 16 },
-      { "key": "torti",        "label": "Via Torti",        "weight": 14 }
+      {
+        "key": "albaro",
+        "label": "Albaro",
+        "weight": 20
+      },
+      {
+        "key": "manin",
+        "label": "Piazza Manin",
+        "weight": 18
+      },
+      {
+        "key": "assarotti",
+        "label": "Via Assarotti",
+        "weight": 18
+      },
+      {
+        "key": "xxsettembre",
+        "label": "Via XX Settembre",
+        "weight": 16
+      },
+      {
+        "key": "carignano",
+        "label": "Carignano",
+        "weight": 16
+      },
+      {
+        "key": "molo",
+        "label": "Molo",
+        "weight": 10
+      },
+      {
+        "key": "foce",
+        "label": "Foce",
+        "weight": 18
+      },
+      {
+        "key": "corsoeuropa",
+        "label": "Corso Europa",
+        "weight": 12
+      },
+      {
+        "key": "brignole",
+        "label": "Brignole",
+        "weight": 16
+      },
+      {
+        "key": "sanmartino",
+        "label": "San Martino",
+        "weight": 14
+      },
+      {
+        "key": "sanvincenzo",
+        "label": "San Vincenzo",
+        "weight": 16
+      },
+      {
+        "key": "torti",
+        "label": "Via Torti",
+        "weight": 14
+      }
     ],
     "gpsFallbackRadiusMeters": 700,
     "_note2": "If an ad has no usable zone name, we accept it when its GPS lands within this radius of one of your areas.",
     "strict": false,
     "_note3": "false = also keep strong listings just outside your zones (they appear in a separate 'Nearby' section). Set true to hide them entirely."
   },
-
   "sources": {
-    "immobiliare": { "enabled": true,  "maxPages": 12 },
-    "subito":      { "enabled": true,  "maxPages": 8 },
-    "casa":        { "enabled": true,  "maxPages": 8 },
-    "idealista":   { "enabled": true,  "maxPages": 4, "headless": false,
-                     "_note": "Idealista uses DataDome bot protection. headless:false is far more likely to pass. Run 'npm run install-browser' once first." }
+    "immobiliare": {
+      "enabled": true,
+      "maxPages": 12,
+      "fetchFullText": true,
+      "_note2": "fetchFullText opens the ad page in a browser for shortlisted listings only, to read contract type and residenza from the body. Adds ~1 min per run. Set false to skip.",
+      "maxFullTextFetches": 40,
+      "headless": true
+    },
+    "subito": {
+      "enabled": true,
+      "maxPages": 8
+    },
+    "casa": {
+      "enabled": true,
+      "maxPages": 8
+    },
+    "idealista": {
+      "enabled": true,
+      "maxPages": 4,
+      "headless": false,
+      "_note": "Idealista uses DataDome bot protection. headless:false is far more likely to pass. Run 'npm run install-browser' once first."
+    }
   },
-
   "report": {
     "title": "Genoa Rental Report",
     "maxListings": 60,
@@ -81,7 +148,6 @@
     "photosPerListing": 1,
     "openInBrowserAfterRun": false
   },
-
   "email": {
     "enabled": false,
     "_note": "Flip to true once you add SMTP credentials to .env - see .env.example. Nothing else needs to change.",
@@ -90,7 +156,6 @@
     "onlyIfNewListings": false,
     "_note2": "true = skip sending when nothing new appeared since the last run."
   },
-
   "network": {
     "requestDelayMs": 700,
     "_note": "Politeness delay between requests to the same site. Do not set below 400.",

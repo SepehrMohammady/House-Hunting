@@ -29,7 +29,8 @@ import { fetchIdealista } from './sources/idealista.js';
 import { enrich, parsePrice, parseSurface } from './normalize.js';
 import { dedupe } from './dedupe.js';
 import { assessCredibility } from './credibility.js';
-import { applyFilters } from './filter.js';
+import { enrichFullText } from './enrich.js';
+import { applyFilters, rejectReason, scoreListing } from './filter.js';
 import { loadStore, saveStore, markChanges } from './store.js';
 import { buildReport, writeReport } from './report.js';
 import { sendReport } from './mailer.js';
@@ -147,6 +148,53 @@ async function main() {
   // ---- 5. Filter and score ----------------------------------------------
   const { matched, nearby, rejected } = applyFilters(unique, config);
   log.info(`${matched.length} match your zones and criteria (${nearby.length} just outside)`);
+
+  // ---- 5b. Full text for the finalists ----------------------------------
+  // Immobiliare's list view gives only a headline, and contract type and
+  // residenza live in the ad body. Fetching that for every listing would be
+  // hundreds of page loads, so it runs here - after filtering, over the short
+  // list only - and anything newly revealed as transitorio or short-term is
+  // then dropped.
+  if (config.sources.immobiliare?.fetchFullText !== false) {
+    const { enriched, failed, changed } = await enrichFullText(
+      [...matched, ...nearby],
+      config,
+      log
+    );
+    if (enriched || failed) {
+      log.info(`Read full ad text for ${enriched} listings (${failed} unavailable)`);
+    }
+
+    if (changed.length) {
+      // Re-apply the hard filters: the fuller text can disqualify a listing that
+      // its headline made look fine.
+      const recheck = (arr) =>
+        arr.filter((l) => {
+          const reason = rejectReason(l, config);
+          if (reason) {
+            rejected.push({ listing: l, reason: `${reason} (found in full ad text)` });
+            return false;
+          }
+          return true;
+        });
+
+      const keptMatched = recheck(matched);
+      const keptNearby = recheck(nearby);
+      const dropped = matched.length - keptMatched.length + (nearby.length - keptNearby.length);
+
+      matched.length = 0;
+      matched.push(...keptMatched);
+      nearby.length = 0;
+      nearby.push(...keptNearby);
+
+      // Scores depend on residenza and contract type, so refresh them.
+      for (const l of [...matched, ...nearby]) scoreListing(l, config);
+      matched.sort((a, b) => b.score - a.score);
+      nearby.sort((a, b) => b.score - a.score);
+
+      if (dropped) log.info(`Dropped ${dropped} more once the full ad text was read`);
+    }
+  }
 
   // ---- 6. Diff against the last run -------------------------------------
   const store = loadStore();

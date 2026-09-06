@@ -113,6 +113,7 @@ function detailsCell(l) {
     feature('A/C', l.airConditioning) +
     (l.balcony === true ? badge('balcony', C.dimBg, C.dim) : '') +
     `</div>` +
+    contractRow(l) +
     `<div style="color:${C.muted};font-size:11px;margin-top:5px;">` +
     `${esc(l.source)}` +
     (l.zoneMatch ? ` &middot; matched by ${esc(l.zoneMatch.via)}` : '') +
@@ -120,6 +121,36 @@ function detailsCell(l) {
     warningBlock(l) +
     `</td>`
   );
+}
+
+/**
+ * Lease type and residenza.
+ *
+ * Residenza gets its own prominent chip rather than sitting with the amenities,
+ * because it is not a nice-to-have: without it there is no permesso di soggiorno
+ * renewal, no tessera sanitaria and no carta d'identita. Ads that explicitly
+ * refuse it are already filtered out, so the chip here is either a confirmed
+ * yes or a reminder to ask - and "ask" is deliberately styled as an action, not
+ * as a neutral unknown, since it must be settled before signing anything.
+ */
+function contractRow(l) {
+  const chips = [];
+
+  if (l.contractType === 'long') {
+    chips.push(badge('long-term contract', C.goodBg, C.good));
+  }
+
+  if (l.residenza === true) {
+    chips.push(badge('residenza offered', C.goodBg, C.good));
+  } else {
+    // Immobiliare only exposes a short headline, so "not stated" there is much
+    // weaker evidence than on a portal that publishes the whole ad body.
+    const label =
+      l.textDepth === 'headline-only' ? 'residenza: ask (ad text limited)' : 'residenza: ask';
+    chips.push(badge(label, C.warnBg, C.warn));
+  }
+
+  return `<div style="margin-top:5px;">${chips.join('')}</div>`;
 }
 
 /**
@@ -272,6 +303,16 @@ export function buildReport({ matched, nearby, rejected, stats, config, runAt })
     <strong>Criteria:</strong> ${config.property.bedrooms} bedrooms${config.property.allowBedroomsPlusOne ? ' (3 also shown)' : ''},
     ${esc(config.property.furnished)} furnished, max ${eur(config.budget.maxTotalPerMonth)}/month all-in
     (rent + condo fees + utilities, utilities assumed ${eur(config.budget.assumedUtilitiesPerMonth)}).<br>
+    <strong>Contract:</strong> long-term only &mdash;
+    ${[
+      config.contract?.excludeTransitorio && 'transitorio',
+      config.contract?.excludeShortTerm && 'short-term/tourist',
+      config.contract?.excludeStudentOnly && 'students-only',
+    ]
+      .filter(Boolean)
+      .join(', ')} excluded.
+    Ads that explicitly refuse <strong>residenza</strong> are dropped; where the ad is silent the report says
+    &ldquo;ask&rdquo;, so confirm it before signing.<br>
     <strong>Sources:</strong> ${sourceLines}
   </td></tr>
 

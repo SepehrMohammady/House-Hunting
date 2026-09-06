@@ -121,6 +121,10 @@ export async function fetchSubito(config, log) {
         contactType: a.advertiser?.company === false ? 'private' : 'agency',
         agencyUrl: null,
 
+        // Italian law requires a CIN for short-term tourist lets, so its
+        // presence is hard evidence of a short let rather than a wording guess.
+        hasTouristCode: !!f['/cin'],
+
         photos,
         rawFeatures: Object.entries(f).map(([k, v]) => `${k.slice(1)}: ${v}`),
         postedAt: a.dates?.display_iso8601 || a.dates?.display || null,

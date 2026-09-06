@@ -36,6 +36,29 @@ export function rejectReason(l, config) {
     return 'not furnished';
   }
 
+  // Lease type. Only an explicit statement excludes: silence is not evidence of
+  // a short let, and most ads never name the contract at all.
+  const contract = config.contract || {};
+  if (contract.excludeTransitorio && l.contractType === 'transitorio') {
+    return 'contratto transitorio';
+  }
+  if (contract.excludeShortTerm && l.contractType === 'short') {
+    return 'short-term / tourist let';
+  }
+  if (contract.excludeStudentOnly && l.contractType === 'student') {
+    return 'students only';
+  }
+
+  // Residenza. 'required' would empty the report - most landlords simply never
+  // mention it - so 'preferred' drops only an explicit refusal and leaves the
+  // unstated majority to be asked about.
+  if (contract.residenza === 'required' && l.residenza !== true) {
+    return l.residenza === false ? 'residenza refused' : 'residenza not confirmed';
+  }
+  if (contract.residenza === 'preferred' && l.residenza === false) {
+    return 'residenza refused';
+  }
+
   if (property.minSurfaceSqm && Number.isFinite(l.surfaceSqm)) {
     if (l.surfaceSqm < property.minSurfaceSqm) return `${l.surfaceSqm} m2 too small`;
   }
@@ -65,10 +88,19 @@ export function scoreListing(l, config) {
     why.push(`${l.zoneMatch.zone.label} +${Math.round(w)}`);
   }
 
+  // A bulk poster's amenity claims are the least trustworthy thing about it:
+  // the pattern that flagged the advertiser in the first place is that all of
+  // its ads assert the same premium feature set in identical wording. Scoring
+  // those claims at full weight let a flagged lead farm take the top two spots
+  // purely on features nobody has verified, so they count half here. The listing
+  // still appears, with its warning - it is just no longer rewarded for boasting.
+  const claimWeight = l.bulkPoster ? 0.5 : 1;
+
   const add = (cond, pts, label) => {
     if (cond === true && pts) {
-      score += pts;
-      why.push(`${label} +${pts}`);
+      const value = Math.round(pts * claimWeight);
+      score += value;
+      why.push(`${label} +${value}`);
     }
   };
 
@@ -80,6 +112,14 @@ export function scoreListing(l, config) {
   add(l.renovated, pref.recentlyRenovated, 'renovated');
   add(l.billsIncluded, pref.billsIncluded, 'bills incl.');
   add(l.contactType === 'private', pref.privateOwnerNotAgency, 'private owner');
+
+  // Residenza confirmed in writing is worth a lot: it is uncommon, and finding
+  // out after signing that you cannot register is expensive to undo.
+  add(l.residenza === true, config.contract?.residenzaBonus ?? 0, 'residenza');
+
+  // An explicit long-term contract (4+4, 3+2, canone concordato) is exactly what
+  // the search is for, so say so rather than treating it as unremarkable.
+  add(l.contractType === 'long', 15, 'long-term contract');
 
   // Money: reward headroom under the ceiling, up to 20 points.
   if (Number.isFinite(l.estimatedTotalPerMonth)) {

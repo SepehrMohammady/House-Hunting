@@ -110,3 +110,12 @@ console.log(`  A/C=yes        : ${pct(matched.filter((l) => l.airConditioning ==
 console.log(`  has photo      : ${pct(matched.filter((l) => l.photos?.length).length)}`);
 console.log(`  has phone      : ${pct(matched.filter((l) => l.contactPhone).length)}`);
 console.log(`  private owner  : ${pct(matched.filter((l) => l.contactType === 'private').length)}`);
+
+console.log('\n=== CONTRACT & RESIDENZA ===');
+console.log(`  long-term stated : ${pct(matched.filter((l) => l.contractType === 'long').length)}`);
+console.log(`  contract unstated: ${pct(matched.filter((l) => l.contractType == null).length)}`);
+console.log(`  residenza offered: ${pct(matched.filter((l) => l.residenza === true).length)}`);
+console.log(`  residenza ask    : ${pct(matched.filter((l) => l.residenza == null).length)}`);
+const depth = {};
+for (const l of matched) depth[l.textDepth] = (depth[l.textDepth] || 0) + 1;
+console.log('  ad text depth    :', JSON.stringify(depth));

@@ -269,3 +269,60 @@ test('different flats that happen to share rent and size stay separate', () => {
   ]);
   assert.equal(merged.listings.length, 2);
 });
+
+/* ------------------------ contract type & residenza ------------------------ */
+
+import { detectContractType, detectResidenza } from '../src/contract.js';
+
+test('transitorio leases are identified', () => {
+  // Capped at 18 months with no right of renewal - excluded by config.
+  assert.equal(detectContractType('Centro bilocale arredato contratto transitorio').type, 'transitorio');
+  assert.equal(detectContractType('AFFITTO TRANSITORIO GE SAN MARTINO').type, 'transitorio');
+  assert.equal(detectContractType('locazione transitoria 12 mesi').type, 'transitorio');
+});
+
+test('short-term and tourist lets are identified', () => {
+  assert.equal(detectContractType('locazione turistica breve periodo').type, 'short');
+  assert.equal(detectContractType('affitti brevi settimanali').type, 'short');
+  assert.equal(detectContractType('Appartamento per trasfertisti').type, 'short');
+  assert.equal(detectContractType('casa vacanze fronte mare').type, 'short');
+});
+
+test('a CIN code outranks the wording', () => {
+  // Italian law requires a CIN for short-term tourist lets, so it is a fact
+  // about the listing rather than a claim in its prose.
+  const r = detectContractType('bellissimo trilocale contratto 4+4', { hasTouristCode: true });
+  assert.equal(r.type, 'short');
+});
+
+test('a refusal of short lets is not read as an offer of one', () => {
+  // Real ad: "SOLAMENTE USO STUDENTI, NO TRASFERTISTI, NO PRIMA CASA".
+  // Matching "trasfertisti" without checking for the preceding "NO" classified
+  // this as a short let - the opposite of what the landlord wrote.
+  assert.equal(detectContractType('SOLAMENTE USO STUDENTI, NO TRASFERTISTI, NO PRIMA CASA').type, 'student');
+  assert.equal(detectContractType('no affitti brevi, contratto 4+4 uso abitativo').type, 'long');
+});
+
+test('long-term contracts are identified', () => {
+  assert.equal(detectContractType('affittasi 4+4 uso abitativo').type, 'long');
+  assert.equal(detectContractType('canone concordato 3+2').type, 'long');
+  assert.equal(detectContractType('contratto libero con cedolare secca').type, 'long');
+});
+
+test('an unstated contract type is not guessed', () => {
+  assert.equal(detectContractType('Trilocale arredato con balcone').type, null);
+});
+
+test('residenza is tri-state and never inferred from silence', () => {
+  assert.equal(detectResidenza('si concede residenza').allowed, true);
+  assert.equal(detectResidenza('possibilita di residenza').allowed, true);
+  assert.equal(detectResidenza('idoneo per residenza').allowed, true);
+
+  assert.equal(detectResidenza('non si concede la residenza').allowed, false);
+  assert.equal(detectResidenza('no residenza').allowed, false);
+  // Refusing to be someone's primary home is a refusal of residenza.
+  assert.equal(detectResidenza('NO PRIMA CASA').allowed, false);
+
+  // The common case: the landlord simply never says. That is "ask", not "no".
+  assert.equal(detectResidenza('Trilocale arredato, ottime condizioni').allowed, null);
+});

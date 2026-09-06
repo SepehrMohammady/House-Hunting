@@ -116,7 +116,11 @@ export async function fetchImmobiliare(config, log) {
         url: r.seo?.url || `https://www.immobiliare.it/annunci/${re.id}/`,
         title: re.title || prop.caption || null,
         caption: prop.caption || null,
-        description: null, // only on the detail page; the list view is enough to filter
+        // Usually empty in the list view - the full text lives on the detail
+        // page, which is DataDome-protected. Take it when it is there. The
+        // caption is the reliable field, and it is where agencies put
+        // "contratto transitorio" and "per studenti".
+        description: prop.description || null,
 
         rentPerMonth: re.price?.value ?? null,
         billsIncluded: null, // inferred from text later
@@ -141,7 +145,11 @@ export async function fetchImmobiliare(config, log) {
         ...contact,
 
         photos: pickPhotos(prop, config.report.photosPerListing + 2),
-        rawFeatures: (prop.featureList || []).map((f) => f.label).filter(Boolean),
+        rawFeatures: [
+          ...(prop.featureList || []).map((f) => f.label),
+          // ga4features carries extras the visible list omits, e.g. "arredato".
+          ...(prop.ga4features || []),
+        ].filter(Boolean),
         isNew: !!re.isNew,
       });
     }

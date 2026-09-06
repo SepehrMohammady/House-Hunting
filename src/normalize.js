@@ -16,6 +16,7 @@
  */
 
 import { norm } from './zones.js';
+import { detectContractType, detectResidenza, textDepth } from './contract.js';
 
 /* ------------------------------------------------------------------ *
  * Italian feature vocabulary
@@ -270,6 +271,20 @@ export function enrich(listing, config) {
       text: blob,
     });
   }
+
+  // Lease type and residenza. Both are read from the ad text - no portal exposes
+  // either as a field - and both stay tri-state rather than guessing.
+  const contract = detectContractType(blob, { hasTouristCode: listing.hasTouristCode });
+  listing.contractType = contract.type;
+  listing.contractEvidence = contract.evidence;
+
+  const residenza = detectResidenza(blob);
+  listing.residenza = residenza.allowed;
+  listing.residenzaEvidence = residenza.evidence;
+
+  // How much of the ad we could actually read, so the report can tell "the
+  // landlord did not say" apart from "we only had the headline".
+  listing.textDepth = textDepth(listing);
 
   const cost = estimateTotalCost(listing, config.budget);
   listing.estimatedTotalPerMonth = cost.total;
