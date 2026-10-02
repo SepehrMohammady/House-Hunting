@@ -268,7 +268,7 @@ async function main() {
   // On the web server the report was just written into the served directory, so
   // there is nothing to transfer - uploading would mean scp-ing to ourselves.
   if (publishResult.published && !hasFlag('--no-upload') && !publishesInPlace()) {
-    await uploadArchive({ publishResult, config, log });
+    await uploadArchive({ publishResult, config, log, alsoOnServer });
   }
 
   // ---- 9. Email (dormant until configured) ------------------------------

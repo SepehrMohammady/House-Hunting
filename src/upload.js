@@ -17,6 +17,7 @@
  */
 
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { loadEnv } from './mailer.js';
 
@@ -81,7 +82,7 @@ export async function listRemoteReports({ config, log }) {
     .filter((f) => /^report-.*\.html$/.test(f));
 }
 
-export async function uploadArchive({ publishResult, config, log }) {
+export async function uploadArchive({ publishResult, config, log, alsoOnServer = [] }) {
   if (!config.publish?.upload?.enabled) return { uploaded: false, reason: 'disabled' };
   if (!publishResult?.published) return { uploaded: false, reason: 'nothing published' };
 
@@ -104,7 +105,8 @@ export async function uploadArchive({ publishResult, config, log }) {
     return { uploaded: false, reason: 'ssh failed' };
   }
 
-  const localReport = path.join(publishResult.publishDir, 'reports', publishResult.reportFile);
+  const reportsDir = path.join(publishResult.publishDir, 'reports');
+  const localReport = path.join(reportsDir, publishResult.reportFile);
   const localIndex = publishResult.indexPath;
 
   const sentReport = await run(
@@ -115,6 +117,31 @@ export async function uploadArchive({ publishResult, config, log }) {
   if (!sentReport.ok) {
     log.warn(`upload: report transfer failed - ${sentReport.stderr.trim().split('\n')[0]}`);
     return { uploaded: false, reason: 'scp failed' };
+  }
+
+  // Earlier runs from this machine that never reached the server. The index
+  // about to go up links them, so without this those links would 404. Newest
+  // first and capped, because a long local history is not worth a slow upload.
+  const held = new Set(alsoOnServer);
+  const backlog = fs
+    .readdirSync(reportsDir)
+    .filter((f) => /^report-.*\.html$/.test(f))
+    .filter((f) => f !== publishResult.reportFile && !held.has(f))
+    .sort()
+    .reverse()
+    .slice(0, 20);
+
+  if (backlog.length) {
+    const sentBacklog = await run(
+      'scp',
+      [...scpOpts, ...backlog.map((f) => path.join(reportsDir, f)), `${target}:${remote}/reports/`],
+      240000
+    );
+    if (sentBacklog.ok) {
+      log.step(`upload: also sent ${backlog.length} earlier report${backlog.length === 1 ? '' : 's'}`);
+    } else {
+      log.warn('upload: some earlier reports did not transfer - the index may link a few that are missing');
+    }
   }
 
   // The unlock page. Tiny, and only changes when its styling does, but sending
