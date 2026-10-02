@@ -90,6 +90,27 @@ export async function fetchIdealista(config, log) {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
 
+    // Arrive at the site before a deep search URL, and expect the first visit
+    // to be refused: that refusal is what issues the bot cookie, so reloading
+    // with it in hand is the part that gets in. session.js needs the same.
+    const consent = async () => {
+      try {
+        const button = page.locator('#didomi-notice-agree-button');
+        if (await button.isVisible({ timeout: 3000 })) await button.click();
+      } catch {
+        /* banner absent - fine */
+      }
+    };
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const nav = await page
+        .goto('https://www.idealista.it/', { waitUntil: 'domcontentloaded', timeout: 45000 })
+        .catch(() => null);
+      await consent();
+      await page.waitForTimeout(attempt === 1 ? 5000 : 3000);
+      if (!nav || nav.status() !== 403) break;
+    }
+
     for (let p = 1; p <= cfg.maxPages; p++) {
       // Idealista encodes filters in the path, not the query string, and the
       // token is `con-prezzo_<max>` - `con-prezzo-fino_<max>` 404s. Their own
@@ -98,31 +119,36 @@ export async function fetchIdealista(config, log) {
       const base = `${LIST_URL}con-prezzo_${cap}/`;
       const url = p === 1 ? base : `${base}lista-${p}.htm`;
 
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      const nav = await page
+        .goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 })
+        .catch(() => null);
 
       // Cookie banner blocks the list on a fresh profile.
-      try {
-        const consent = page.locator('#didomi-notice-agree-button');
-        if (await consent.isVisible({ timeout: 3000 })) await consent.click();
-      } catch {
-        /* banner absent - fine */
-      }
+      await consent();
 
       // Either the results land, or we are staring at a challenge page.
       try {
         await page.waitForSelector('article.item', { timeout: 15000 });
       } catch {
         const title = await page.title().catch(() => '');
-        const body = (await page.content().catch(() => '')).slice(0, 400);
-        if (/datadome|captcha|geo\.captcha/i.test(body) || /accesso|robot/i.test(title)) {
+        const body = await page.content().catch(() => '');
+        const refused =
+          (nav && nav.status() === 403) ||
+          /datadome|captcha|geo\.captcha/i.test(body) ||
+          /accesso|robot/i.test(title);
+        if (refused) {
+          // A visible window is not the same as somebody watching it: on a
+          // server it is xvfb's, and nobody will ever type into it.
+          const watched = !resolveHeadless(cfg.headless) && process.stdout.isTTY;
+
           log.warn(
-            `idealista: DataDome challenge on page ${p}. ` +
-              (resolveHeadless(cfg.headless)
-                ? 'Try headless:false in config.json.'
-                : 'Solve the CAPTCHA in the open window - the profile is saved for next time.')
+            `idealista: refused on page ${p}. ` +
+              (watched
+                ? 'Solve the CAPTCHA in the open window - the profile is saved for next time.'
+                : 'Needs a visible browser someone can answer; resting until the next run.')
           );
-          // Give a human a chance to solve it while the window is visible.
-          if (!resolveHeadless(cfg.headless)) {
+
+          if (watched) {
             const solved = await page
               .waitForSelector('article.item', { timeout: 90000 })
               .then(() => true)

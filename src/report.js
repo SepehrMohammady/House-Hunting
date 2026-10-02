@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { summariseRejections } from './filter.js';
 import { C, styleBlock, themeToggle } from './theme.js';
+import { loadEnv } from './mailer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -100,7 +101,15 @@ function detailsCell(l) {
   if (l.priceDrop)
     flags.push(badge(`price cut ${eur(l.priceDrop.from)} -> ${eur(l.priceDrop.to)}`, 'warn'));
   if (l.daysListed >= 21) flags.push(badge(`listed ${l.daysListed}d`, 'dim'));
-  if (l.alsoOn?.length) flags.push(badge(`also on ${l.alsoOn.length + 1} sites`, 'cool'));
+  if (l.alsoOn?.length) {
+    const sites = new Set([l.source, ...l.alsoOn.map((o) => o.source)]).size;
+    flags.push(
+      badge(
+        sites > 1 ? `also on ${sites} sites` : `${l.alsoOn.length + 1} ads on this site`,
+        'cool'
+      )
+    );
+  }
 
   return (
     `<td class="c-main" style="padding:12px 12px 12px 0;vertical-align:top;">` +
@@ -200,6 +209,69 @@ function costCell(l) {
   );
 }
 
+/**
+ * Back to the index of every report.
+ *
+ * The same HTML is both published and emailed, so a relative path would be dead
+ * in a mail client. The site URL comes from .env, where everything identifying
+ * lives; without it this falls back to the relative path, which is still right
+ * inside the archive.
+ */
+function backLink() {
+  const site = loadEnv().PUBLISH_SITE_URL;
+  const href = site ? `${site.replace(/\/+$/, '')}/` : '../index.html';
+  return (
+    `<a class="t-cool" href="${esc(href)}" ` +
+    `style="color:${C.cool};font-size:12px;font-weight:600;text-decoration:none;">` +
+    `&larr; All reports</a>`
+  );
+}
+
+/** Portals are known by their name, not their domain. */
+const portalName = (source) => String(source || 'listing').replace(/\.(it|com)$/i, '');
+
+/**
+ * Where to go to see the ad.
+ *
+ * A flat on several portals has a separate ad on each, with its own photos,
+ * wording, agency and sometimes its own asking rent. Picking one for the reader
+ * would hide the others, so each gets a button and the choice stays theirs.
+ * The portal that survived deduping leads, because its record is the richest.
+ */
+function listingButtons(l) {
+  const button = (href, label, lead) =>
+    `<a class="btn" href="${esc(href)}" target="_blank" rel="noopener noreferrer" ` +
+    `style="display:inline-block;margin:0 5px 5px 0;padding:7px 12px;` +
+    `background:${lead ? C.cool : 'transparent'};color:${lead ? '#ffffff' : C.cool};` +
+    `border:1px solid ${C.cool};border-radius:5px;font-size:12px;font-weight:600;` +
+    `text-decoration:none;">${esc(label)}</a>`;
+
+  // One portal: there is nothing to choose between, so name the action instead.
+  if (!l.alsoOn?.length) {
+    return `<div style="margin-top:9px;">${button(l.url, 'View listing', true)}</div>`;
+  }
+
+  const seen = new Map();
+  const label = (source) => {
+    const name = portalName(source);
+    const nth = (seen.get(name) || 0) + 1;
+    seen.set(name, nth);
+    return nth > 1 ? `${name} ${nth}` : name;
+  };
+
+  const buttons = [{ url: l.url, source: l.source, lead: true }]
+    .concat(l.alsoOn.map((other) => ({ url: other.url, source: other.source, lead: false })))
+    .map((entry) => button(entry.url, label(entry.source), entry.lead));
+
+  return (
+    `<div style="margin-top:9px;">` +
+    `<div class="t-muted" style="color:${C.muted};font-size:10px;text-transform:uppercase;` +
+    `letter-spacing:.4px;margin-bottom:5px;">View on</div>` +
+    buttons.join('') +
+    `</div>`
+  );
+}
+
 function contactCell(l) {
   const phones = (l.contactPhones?.length ? l.contactPhones : [l.contactPhone]).filter(Boolean);
   const phoneHtml = phones.length
@@ -218,10 +290,7 @@ function contactCell(l) {
     `<div class="t-muted" style="font-size:11px;color:${C.muted};margin:2px 0 6px;">` +
     `${l.contactType === 'private' ? 'private owner (no commission)' : 'agency'}</div>` +
     phoneHtml +
-    `<div style="margin-top:9px;">` +
-    `<a class="btn" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" ` +
-    `style="display:inline-block;padding:7px 12px;background:${C.cool};` +
-    `color:#fff;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;">View listing</a></div>` +
+    listingButtons(l) +
     `</td>`
   );
 }
@@ -311,6 +380,7 @@ ${styleBlock('report')}
   <tr><td class="hdr" colspan="4" style="padding:22px 24px 18px;border-bottom:1px solid ${C.line};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="vertical-align:top;">
+        <div style="margin-bottom:6px;">${backLink()}</div>
         <div class="t-ink" style="font-size:21px;font-weight:700;color:${C.ink};">${esc(config.report.title)}</div>
         <div class="t-muted" style="font-size:12px;color:${C.muted};margin-top:3px;">${esc(when)} (Rome time)</div>
       </td>
