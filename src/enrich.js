@@ -104,6 +104,20 @@ export async function enrichFullText(listings, config, log) {
     // Images are the bulk of the payload and we only want the text.
     await page.route('**/*.{png,jpg,jpeg,webp,gif,svg,woff,woff2,mp4}', (r) => r.abort());
 
+    // Arrive the way a reader would. Landing on a deep ad page with no cookie is
+    // what the check is looking for, and the first refusal is what issues the
+    // cookie, so the reload is the part that actually gets us in.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const nav = await page
+        .goto('https://www.immobiliare.it/affitto-case/genova/', {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        })
+        .catch(() => null);
+      await page.waitForTimeout(attempt === 1 ? 5000 : 3000);
+      if (!nav || nav.status() !== 403) break;
+    }
+
     for (const l of batch) {
       try {
         await page.goto(l.url, { waitUntil: 'domcontentloaded', timeout: 30000 });

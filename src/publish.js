@@ -64,19 +64,13 @@ export function publishesInPlace() {
  * The run time is recoverable from the filename. The counts are not, so they are
  * left null and the index shows a dash rather than inventing a number.
  */
-function adoptOrphans(reportsDir, reports) {
-  let files;
-  try {
-    files = fs.readdirSync(reportsDir).filter((f) => /^report-.*\.html$/.test(f));
-  } catch {
-    return reports;
-  }
-
+function adoptNames(files, reports, remote) {
   const known = new Set(reports.map((r) => r.file));
   const adopted = [];
 
   for (const file of files) {
     if (known.has(file)) continue;
+    known.add(file);
     // report-2026-09-06T11-29.html -> 2026-09-06T11:29
     const m = file.match(/^report-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})\.html$/);
     if (!m) continue;
@@ -91,10 +85,21 @@ function adoptOrphans(reportsDir, reports) {
       dropCount: null,
       scanned: null,
       adopted: true,
+      remote: !!remote,
     });
   }
 
   return adopted.length ? [...reports, ...adopted] : reports;
+}
+
+function adoptOrphans(reportsDir, reports) {
+  let files;
+  try {
+    files = fs.readdirSync(reportsDir).filter((f) => /^report-.*\.html$/.test(f));
+  } catch {
+    return reports;
+  }
+  return adoptNames(files, reports, false);
 }
 
 function loadManifest() {
@@ -387,7 +392,7 @@ function buildLoginPage(config) {
  * Copy this run's report into the publish directory, prune old ones and
  * regenerate the index. Returns a summary for the run log.
  */
-export function publishReport({ reportPath, config, stats, runAt, log }) {
+export function publishReport({ reportPath, config, stats, runAt, log, alsoOnServer = [] }) {
   const cfg = config.publish;
   if (!cfg?.enabled) return { published: false, reason: 'disabled' };
 
@@ -406,7 +411,12 @@ export function publishReport({ reportPath, config, stats, runAt, log }) {
   // Record this run, newest first.
   // Pick up any reports present on disk but absent from the manifest, so a
   // manifest that has gone missing does not orphan the files it indexed.
-  let reports = adoptOrphans(reportsDir, loadManifest()).filter((r) => r.file !== file);
+  // Reports the server holds that this machine has never had. The index is
+  // rebuilt from scratch every run, so without adopting these an upload from
+  // here would hide every report the server produced on its own.
+  let reports = adoptNames(alsoOnServer, adoptOrphans(reportsDir, loadManifest()), true).filter(
+    (r) => r.file !== file
+  );
   reports.unshift({
     file,
     runAt: runAt.toISOString(),
@@ -425,10 +435,13 @@ export function publishReport({ reportPath, config, stats, runAt, log }) {
 
   const dropped = reports.filter((r) => !keep.includes(r));
   for (const r of dropped) {
-    fs.rmSync(path.join(reportsDir, r.file), { force: true });
+    // Only ever delete our own copy; what the server keeps is its business.
+    if (!r.remote) fs.rmSync(path.join(reportsDir, r.file), { force: true });
   }
 
-  saveManifest(keep);
+  // The manifest is this machine's own history. Another machine's reports
+  // belong in the index but not in that record.
+  saveManifest(keep.filter((r) => !r.remote));
 
   const indexPath = path.join(publishDir, 'index.html');
   fs.writeFileSync(indexPath, buildIndex(keep, config), 'utf8');

@@ -123,7 +123,8 @@
       "fetchFullText": true,
       "_note2": "fetchFullText opens the ad page in a browser for shortlisted listings only, to read contract type and residenza from the body. Adds ~1 min per run. Set false to skip.",
       "maxFullTextFetches": 40,
-      "headless": true
+      "headless": false,
+      "_note3": "Detail pages are behind the same bot check as the search API, and headless is refused. Needs a display, so on a server run under xvfb-run."
     },
     "subito": {
       "enabled": true,
@@ -161,7 +162,9 @@
     "requestDelayMs": 700,
     "_note": "Politeness delay between requests to the same site. Do not set below 400.",
     "timeoutMs": 30000,
-    "retries": 2
+    "retries": 2,
+    "browserFallback": true,
+    "_note2": "The portals refuse plain requests now, so a 403 is retried from inside a real browser. Needs 'npm run install-browser' once, and a display - on a server that means running under xvfb-run. Set false to fail instead."
   },
   "schedule": {
     "_comment": "Single source of truth for run times. Change here, then re-run scripts/vps-setup.sh on the server to apply it to the systemd timer. The archive page reads it too, so the page never advertises a schedule it is not actually keeping.",

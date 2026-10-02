@@ -3,6 +3,7 @@ node_modules/
 data/seen.json
 data/run.log
 data/.browser-profile/
+data/.browser-profile-http/
 reports/*.html
 publish/
 data/reports-index.json

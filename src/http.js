@@ -1,4 +1,14 @@
-/** Shared fetch helpers: browser-ish headers, retries, and a politeness delay. */
+/**
+ * Shared fetch helpers: browser-ish headers, retries, and a politeness delay.
+ *
+ * A plain request is tried first because it is far cheaper, but the portals now
+ * answer most of them with a bot challenge. A 403 therefore falls back to
+ * session.js, which reissues the same request from inside a real browser. Once
+ * a host has refused us this run we stop asking it the cheap way, so a source
+ * with a dozen pages pays for that discovery once.
+ */
+
+import { canFallBack, fetchViaBrowser, hostNeedsBrowser, noteHostRefused } from './session.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -56,25 +66,49 @@ export async function fetchWithRetry(url, opts = {}, net = {}) {
   throw lastErr;
 }
 
+/**
+ * Fetch `url` as text, over the browser if a plain request is refused.
+ * `net.browserFallback: false` turns the fallback off and restores the older
+ * behaviour of simply failing.
+ */
+async function fetchBody(url, accept, headers, net = {}) {
+  const useBrowser = net.browserFallback !== false && canFallBack(url);
+
+  if (!(useBrowser && hostNeedsBrowser(url))) {
+    try {
+      const res = await fetchWithRetry(
+        url,
+        { headers: baseHeaders({ Accept: accept, ...headers }) },
+        net
+      );
+      return res.text();
+    } catch (err) {
+      if (!(err.blocked && useBrowser)) throw err;
+      noteHostRefused(url);
+    }
+  }
+
+  return fetchViaBrowser(url, accept, net);
+}
+
 export async function fetchJson(url, headers, net) {
-  const res = await fetchWithRetry(
-    url,
-    { headers: baseHeaders({ Accept: 'application/json', ...headers }) },
-    net
-  );
-  return res.json();
+  const body = await fetchBody(url, 'application/json', headers, net);
+  try {
+    return JSON.parse(body);
+  } catch {
+    // A challenge page can arrive with a 200, and it is not JSON. Calling that
+    // a block rather than a parse error is what lets the source rest and retry.
+    const e = new Error('response was not JSON - likely a bot challenge');
+    e.blocked = true;
+    throw e;
+  }
 }
 
 export async function fetchText(url, headers, net) {
-  const res = await fetchWithRetry(
+  return fetchBody(
     url,
-    {
-      headers: baseHeaders({
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        ...headers,
-      }),
-    },
+    'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    headers,
     net
   );
-  return res.text();
 }

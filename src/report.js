@@ -75,7 +75,7 @@ function photoCell(l) {
   }
   return (
     `<td class="c-photo" width="170" style="padding:12px;vertical-align:top;">` +
-    `<a href="${esc(l.url)}" style="text-decoration:none;">` +
+    `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">` +
     `<img src="${esc(src)}" width="158" alt="" ` +
     `style="width:158px;height:118px;object-fit:cover;border-radius:6px;display:block;border:1px solid ${C.line};"></a></td>`
   );
@@ -105,7 +105,8 @@ function detailsCell(l) {
   return (
     `<td class="c-main" style="padding:12px 12px 12px 0;vertical-align:top;">` +
     `${flags.join('')}${flags.length ? '<br>' : ''}` +
-    `<a class="t-ink" href="${esc(l.url)}" style="color:${C.ink};font-size:14px;font-weight:600;text-decoration:none;">` +
+    `<a class="t-ink" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" ` +
+    `style="color:${C.ink};font-size:14px;font-weight:600;text-decoration:none;">` +
     `${esc((l.title || 'Untitled listing').slice(0, 95))}</a>` +
     `<div class="t-cool" style="color:${C.cool};font-size:12px;font-weight:600;margin-top:3px;">${esc(zone)}` +
     (l.address
@@ -218,7 +219,8 @@ function contactCell(l) {
     `${l.contactType === 'private' ? 'private owner (no commission)' : 'agency'}</div>` +
     phoneHtml +
     `<div style="margin-top:9px;">` +
-    `<a class="btn" href="${esc(l.url)}" style="display:inline-block;padding:7px 12px;background:${C.cool};` +
+    `<a class="btn" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" ` +
+    `style="display:inline-block;padding:7px 12px;background:${C.cool};` +
     `color:#fff;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;">View listing</a></div>` +
     `</td>`
   );

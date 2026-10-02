@@ -42,6 +42,45 @@ function sshOptions(env, forScp) {
   return opts;
 }
 
+/**
+ * Report filenames already sitting on the server.
+ *
+ * Both machines publish into one archive: the server on its schedule, and this
+ * one for the portal the server's address cannot reach. Each therefore holds
+ * reports the other has never seen, and the index is regenerated from scratch
+ * on every run, so each side has to be told about the other's.
+ *
+ * A failure here is not worth stopping for. The index is then merely
+ * incomplete until the next run on either machine rebuilds it.
+ */
+export async function listRemoteReports({ config, log }) {
+  if (!config.publish?.upload?.enabled) return [];
+
+  const env = loadEnv();
+  if (!env.VPS_HOST || !env.VPS_USER || !env.VPS_PATH) return [];
+
+  const remote = env.VPS_PATH.replace(/\/+$/, '');
+  const res = await run(
+    'ssh',
+    [
+      ...sshOptions(env, false),
+      `${env.VPS_USER}@${env.VPS_HOST}`,
+      `ls -1 '${remote}/reports' 2>/dev/null || true`,
+    ],
+    30000
+  );
+
+  if (!res.ok) {
+    log.warn('upload: could not list the server reports - the index may miss its runs');
+    return [];
+  }
+
+  return res.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((f) => /^report-.*\.html$/.test(f));
+}
+
 export async function uploadArchive({ publishResult, config, log }) {
   if (!config.publish?.upload?.enabled) return { uploaded: false, reason: 'disabled' };
   if (!publishResult?.published) return { uploaded: false, reason: 'nothing published' };

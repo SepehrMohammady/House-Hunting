@@ -43,7 +43,8 @@ import {
 import { buildReport, writeReport } from './report.js';
 import { sendReport, loadEnv } from './mailer.js';
 import { publishReport, publishesInPlace } from './publish.js';
-import { uploadArchive } from './upload.js';
+import { listRemoteReports, uploadArchive } from './upload.js';
+import { closeSession } from './session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -160,6 +161,10 @@ async function main() {
 
   log.info(`\nCollected ${all.length} raw listings`);
 
+  // The fallback browser is no use past this point, and idealista.js and
+  // enrich.js each want their own, so let it go rather than leave it running.
+  await closeSession();
+
   // ---- 2. Normalise ------------------------------------------------------
   for (const l of all) {
     // Sources hand back mixed types ("700 €", "55 mq", 1000) - coerce first,
@@ -254,7 +259,11 @@ async function main() {
   log.info(`\nReport written to ${path.relative(ROOT, reportPath)}`);
 
   // ---- 8. Publish to the archive ----------------------------------------
-  const publishResult = publishReport({ reportPath, config, stats, runAt, log });
+  // Asked before building, so the index we write lists the server's runs too.
+  const alsoOnServer =
+    !hasFlag('--no-upload') && !publishesInPlace() ? await listRemoteReports({ config, log }) : [];
+
+  const publishResult = publishReport({ reportPath, config, stats, runAt, log, alsoOnServer });
 
   // On the web server the report was just written into the served directory, so
   // there is nothing to transfer - uploading would mean scp-ing to ourselves.
